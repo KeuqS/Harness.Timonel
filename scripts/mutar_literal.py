@@ -22,7 +22,9 @@ probado.
 Modos (la unidad es la linea; se mutan TODAS las que contienen el literal):
     borrar  quita el literal de cada linea que lo contiene
     mover   las lineas con el literal fuera de la seccion `--a` se quitan y se
-            reinsertan al final de esa seccion. Seccion = desde el encabezado
+            reinsertan al final de esa seccion. `--a` es la linea completa del
+            encabezado (`## Notas`, no un prefijo ni un titulo sin `#`).
+            Seccion = desde el encabezado
             hasta el siguiente de nivel <= al suyo, o fin de archivo.
 
 Sin `--test` corre `unittest discover -s tests` en la copia.
@@ -31,9 +33,12 @@ Stdout: `lineas mutadas: K` y `fallos: N de M`.
 
 Codigos de salida:
     0   hubo conteo `fallos: N de M` (con la mutacion verificada)
-    2   no se: mutacion que no entro, seccion destino inexistente, objetivo
-        sin tests o inexistente, salida no parseable, timeout, o argumentos
-        invalidos (coincide con el exit de uso de argparse; no hay exit 1)
+    2   no se (stderr: `no sé: <motivo>`, uno de `MOTIVOS`): mutacion que no
+        entro, `--a` que no es un encabezado `#+ `, seccion destino
+        inexistente, copia o lectura imposible (OSError, shutil.Error, archivo
+        no UTF-8), objetivo sin tests o inexistente, salida no parseable,
+        timeout, o argumentos invalidos (coincide con el exit de uso de
+        argparse). No hay exit 1: ningun "no pude medir" termina en traceback.
 """
 
 from __future__ import annotations
@@ -56,10 +61,12 @@ MOTIVOS = {
     "ruta_invalida": "--ruta debe ser un archivo existente, relativo al repo y sin `..`",
     "mover_sin_destino": "--modo mover exige --a",
     "mutacion_no_aplicada": "la mutación no se aplicó (el literal no está fuera del destino o la copia quedó idéntica)",
+    "destino_no_es_encabezado": "--a debe ser un encabezado markdown completo (`#+ ` seguido del título)",
     "seccion_destino_inexistente": "sección destino no existe en la ruta",
     "objetivo_no_encontrado": "objetivo de test no encontrado",
     "sin_tests": "el objetivo no recolectó ningún test",
     "salida_no_parseable": "la salida de unittest no trae `Ran M tests`",
+    "copia_o_lectura_imposible": "no se pudo copiar el repo o leer/escribir la ruta (symlink roto, permisos o archivo no UTF-8)",
     "timeout": f"unittest superó el timeout de {TIMEOUT_S} s",
 }
 
@@ -79,10 +86,11 @@ def _nivel(linea: str) -> int:
 
 def rango_de_seccion(lineas: list[str], encabezado: str) -> tuple[int, int] | None:
     """(inicio, fin) de la seccion: del encabezado al siguiente de nivel <= al
-    suyo (exclusivo) o fin de archivo. Encabezado anclado a inicio de linea."""
+    suyo (exclusivo) o fin de archivo. Encabezado anclado por igualdad de linea
+    completa (`## N` no ancla en `## Nueva`)."""
     nivel = _nivel(encabezado)
     for i, linea in enumerate(lineas):
-        if linea.startswith(encabezado):
+        if linea.rstrip("\n") == encabezado:
             for j in range(i + 1, len(lineas)):
                 if 0 < _nivel(lineas[j]) <= nivel:
                     return i, j
@@ -129,6 +137,8 @@ def mutar(texto: str, literal: str, modo: str, destino: str | None) -> tuple[str
     if afectadas == 0:
         raise NoSe("mutacion_no_aplicada")
     nuevo = "".join(MODOS[modo](lineas, literal, destino))
+    # Alcanzable: si el literal es el encabezado que sigue al destino y esta al
+    # final del archivo, se quita y se reinserta en el mismo sitio (texto igual).
     if nuevo == texto:
         raise NoSe("mutacion_no_aplicada")
     return nuevo, afectadas
@@ -182,6 +192,8 @@ def _validar(args: argparse.Namespace) -> None:
         raise NoSe("ruta_invalida")
     if args.modo == "mover" and not args.a:
         raise NoSe("mover_sin_destino")
+    if args.modo == "mover" and not re.match(r"#+ \S", args.a):
+        raise NoSe("destino_no_es_encabezado")
 
 
 def medir(args: argparse.Namespace) -> tuple[int, int, int]:
@@ -190,11 +202,17 @@ def medir(args: argparse.Namespace) -> tuple[int, int, int]:
     origen = Path.cwd().resolve()
     with tempfile.TemporaryDirectory() as tmp:
         copia = Path(tmp) / "copia"
-        shutil.copytree(origen, copia, ignore=_ignorar(origen))
         archivo = copia / args.ruta
-        original = archivo.read_text(encoding="utf-8")
+        try:
+            shutil.copytree(origen, copia, ignore=_ignorar(origen))
+            original = archivo.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            raise NoSe("copia_o_lectura_imposible")
         nuevo, k = mutar(original, args.literal, args.modo, args.a)
-        archivo.write_text(nuevo, encoding="utf-8")
+        try:
+            archivo.write_text(nuevo, encoding="utf-8")
+        except OSError:
+            raise NoSe("copia_o_lectura_imposible")
         salida = correr_unittest(copia, args.test)
         fallos, total = parsear_unittest(salida, args.test is not None)
     return k, fallos, total

@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.13.0 — en desarrollo
+## 0.13.0 — 2026-10-09
 
+- `scripts/mutar_literal.py` ancla `--a` por igualdad de línea completa (`## N` ya no toma `## Nueva`, el pase falso de #263) y exige un encabezado `#+ ` (`destino_no_es_encabezado`); `OSError`, `shutil.Error` y `UnicodeDecodeError` al copiar o leer salen 2 con `no sé: <motivo>` (`copia_o_lectura_imposible`), nunca exit 1 con traceback; se conserva el guard `if nuevo == texto` (alcanzable cuando el literal es el encabezado final que sigue al destino) con un test puro y uno de subproceso que solo él hace pasar; `IgnorarCopiaTests` ve fallar cada exclusión de `_ignorar` (una mutación por exclusión, 1 fallo cada una); 9 tests nuevos en `tests/test_mutar_literal.py` (40); 388 en verde (#272)
 - `timonel_gh.load_config()` resuelve `.claude/timonel.config.json` desde el checkout principal (`git rev-parse --path-format=absolute --git-common-dir`, solo si el common-dir se llama `.git`) cuando el CWD es un worktree sin `.claude/`; el fallo de git es un "no sé" con su stderr ("no se pudo resolver el checkout principal"), distinto de "no se encontro"; `guard_integracion.py` reutiliza el resolvedor y deja rastro al caer a las bases por defecto, y la compuerta del hook del guard en `hooks/hooks.json` acepta el config del checkout principal. Tests: `ResolverConfigWorktreeTests` y `GuardResuelveConfigDesdeWorktreeTests`; 393 en verde (#210)
 
 ## 0.12.0 — 2026-10-08

@@ -1,5 +1,6 @@
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,16 @@ class SeccionYMutacionTests(unittest.TestCase):
     def test_encabezado_anclado_a_inicio_de_linea(self):
         self.assertIsNone(ml.rango_de_seccion(self._lineas("texto ## X\n"), "## X"))
 
+    def test_encabezado_se_ancla_por_linea_completa_no_por_prefijo(self):
+        lineas = self._lineas("## Otra\nlinea X\n## Nueva\nn\n## N\nfin\n")
+        self.assertEqual(ml.rango_de_seccion(lineas, "## N"), (4, 6))
+
+    def test_mover_a_encabezado_que_es_prefijo_de_otro_no_cae_en_la_seccion_equivocada(self):
+        nuevo, k = ml.mutar("## Otra\nlinea X\n## Nueva\nn\n## N\nfin\n", "linea X", "mover", "## N")
+        self.assertEqual((nuevo, k), ("## Otra\n## Nueva\nn\n## N\nfin\nlinea X\n", 1))
+        seccion_nueva = nuevo.split("## Nueva\n")[1].split("## N\n")[0]
+        self.assertNotIn("linea X", seccion_nueva)
+
     def test_borrar_quita_el_literal_de_todas_las_lineas(self):
         nuevo, k = ml.mutar("a LIT\nb\nc LIT LIT\n", "LIT", "borrar", None)
         self.assertEqual((nuevo, k), ("a \nb\nc  \n", 2))
@@ -102,10 +113,45 @@ class SeccionYMutacionTests(unittest.TestCase):
             ml.mutar("## N\nLIT\n", "LIT", "mover", "## N")
         self.assertEqual(c.exception.clave, "mutacion_no_aplicada")
 
+    def test_mover_que_reinserta_en_el_mismo_sitio_es_no_se(self):
+        # `Z` solo esta en el ultimo encabezado, que sigue al destino: se quita y
+        # vuelve al fin de la seccion `## N`, que ahora llega al fin de archivo.
+        with self.assertRaises(ml.NoSe) as c:
+            ml.mutar("## N\nfoo\n## Z\n", "Z", "mover", "## N")
+        self.assertEqual(c.exception.clave, "mutacion_no_aplicada")
+
     def test_mover_a_seccion_inexistente_es_no_se(self):
         with self.assertRaises(ml.NoSe) as c:
             ml.mutar("LIT\n", "LIT", "mover", "## N")
         self.assertEqual(c.exception.clave, "seccion_destino_inexistente")
+
+
+class IgnorarCopiaTests(unittest.TestCase):
+    """`_ignorar` excluye `.timonel/`, `__pycache__/` y `*.pyc`: cada exclusion se ve fallar."""
+
+    def _copiar(self, tmp: str) -> Path:
+        origen = Path(tmp) / "origen"
+        for d in (".timonel", "__pycache__", "sub/__pycache__", ".claude/worktrees"):
+            (origen / d).mkdir(parents=True)
+            (origen / d / "dentro.txt").write_text("x", encoding="utf-8")
+        (origen / "x.pyc").write_text("x", encoding="utf-8")
+        (origen / "ok.txt").write_text("x", encoding="utf-8")
+        copia = Path(tmp) / "copia"
+        shutil.copytree(origen, copia, ignore=ml._ignorar(origen.resolve()))
+        return copia
+
+    def _existentes(self, copia: Path) -> set[str]:
+        return {str(p.relative_to(copia)) for p in copia.rglob("*")}
+
+    def test_copia_excluye_timonel_pycache_y_pyc_y_conserva_el_resto(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            existentes = self._existentes(self._copiar(tmp))
+        self.assertIn("ok.txt", existentes)
+        self.assertNotIn(".timonel", existentes)
+        self.assertNotIn("__pycache__", existentes)
+        self.assertNotIn("sub/__pycache__", existentes)
+        self.assertNotIn("x.pyc", existentes)
+        self.assertNotIn(".claude/worktrees", existentes)
 
 
 class ParsearUnittestTests(unittest.TestCase):
@@ -178,6 +224,13 @@ class MainSubprocessTests(unittest.TestCase):
         self.assertIn("la mutación no se aplicó", r.stderr)
         self.assertNotIn("fallos:", r.stdout)
 
+    def test_mover_que_reinserta_en_el_mismo_sitio_sale_2_sin_fallos(self):
+        (self.repo / "doc.md").write_text("## N\nfoo\n## Z\n", encoding="utf-8")
+        r = _correr(self.repo, "--ruta", "doc.md", "--literal", "Z", "--modo", "mover", "--a", "## N")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("la mutación no se aplicó", r.stderr)
+        self.assertNotIn("fallos:", r.stdout)
+
     def test_mover_sin_a_sale_2(self):
         r = _correr(self.repo, "--ruta", "doc.md", "--literal", "MARCA", "--modo", "mover")
         self.assertEqual(r.returncode, 2)
@@ -197,6 +250,42 @@ class MainSubprocessTests(unittest.TestCase):
         r = _correr(self.repo, "--ruta", "doc.md", "--literal", "MARCA", "--modo", "borrar", "--test", "tests.test_x.NoExiste")
         self.assertEqual(r.returncode, 2)
         self.assertIn("objetivo de test no encontrado", r.stderr)
+        self.assertNotIn("fallos:", r.stdout)
+
+    def test_a_sin_encabezado_markdown_sale_2_con_su_motivo_y_sin_fallos(self):
+        r = _correr(self.repo, "--ruta", "doc.md", "--literal", "MARCA", "--modo", "mover", "--a", "Notas")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn(ml.MOTIVOS["destino_no_es_encabezado"], r.stderr)
+        self.assertNotIn("fallos:", r.stdout)
+
+    def test_mover_a_encabezado_prefijo_de_otro_sale_0_y_mueve_a_la_seccion_pedida(self):
+        (self.repo / "doc.md").write_text("## Otra\nlinea X\n## Nueva\nn\n## N\nfin\n", encoding="utf-8")
+        (self.repo / "tests" / "test_y.py").write_text(
+            "import re, unittest\nfrom pathlib import Path\n"
+            "D = (Path(__file__).resolve().parents[1] / 'doc.md').read_text(encoding='utf-8')\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_x_en_N(self):\n"
+            "        self.assertIn('linea X', D.split('## N\\n')[1])\n",
+            encoding="utf-8",
+        )
+        r = _correr(self.repo, "--ruta", "doc.md", "--literal", "linea X", "--modo", "mover", "--a", "## N", "--test", "tests.test_y.T")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("fallos: 0 de 1", r.stdout)
+
+    def test_archivo_no_utf8_sale_2_con_no_se_y_sin_traceback(self):
+        (self.repo / "doc.md").write_bytes(b"\xff\xfe MARCA\n")
+        r = _correr(self.repo, "--ruta", "doc.md", "--literal", "MARCA", "--modo", "borrar")
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("no sé: " + ml.MOTIVOS["copia_o_lectura_imposible"], r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertNotIn("fallos:", r.stdout)
+
+    def test_symlink_roto_en_el_cwd_sale_2_con_no_se_y_sin_traceback(self):
+        (self.repo / "roto").symlink_to(self.repo / "no_existe")
+        r = _correr(self.repo, "--ruta", "doc.md", "--literal", "MARCA", "--modo", "borrar")
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("no sé: " + ml.MOTIVOS["copia_o_lectura_imposible"], r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
         self.assertNotIn("fallos:", r.stdout)
 
     def test_ruta_invalida_sale_2(self):
@@ -240,7 +329,13 @@ class MainEnProcesoTests(unittest.TestCase):
 
 
 class EscenarioRealContraElRepoTests(unittest.TestCase):
-    """Escenario 1 de #263 contra la copia del repo real (no un repo de juguete)."""
+    """Escenario 1 de #263 contra la copia del repo real (no un repo de juguete).
+
+    Acoplamiento deliberado: el literal `**Modo rama del usuario` y el objetivo
+    `ModoRamaDelUsuarioTests` (`tests/test_consistencia.py`) viven fuera de este
+    archivo. Si alguien renombra ese literal en `agents/flechodiezx.md` o esa
+    clase, este test falla con "no sé" (exit 2) o sin fallos, no por un defecto
+    de `mutar_literal.py`: actualizalos aqui en el mismo cambio."""
 
     def _status(self) -> str:
         return subprocess.run(
