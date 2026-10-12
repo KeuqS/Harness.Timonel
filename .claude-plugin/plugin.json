@@ -1,6 +1,6 @@
 {
   "name": "timonel",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Harness opinionado de Claude Code para monorepos Nx con Angular + NestJS: planificacion de historias de usuario y SDD sobre GitHub Issues (sub-issues, labels facetados), ejecucion de historias con sub-agentes en worktrees paralelos, code review, retrospectiva y Definition of Done publicados en el issue.",
   "author": {
     "name": "Luis Felipe Diaz Valbuena"

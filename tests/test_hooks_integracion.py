@@ -12,7 +12,10 @@ Dos capas:
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -743,6 +746,61 @@ def _preparar_repo_destino(tmp_base: Path, rama: str, nombre: str = "destino") -
     destino.mkdir(parents=True, exist_ok=True)
     _preparar_repo(destino, rama, perfil="ninguno")
     return destino
+
+
+class GuardResuelveConfigDesdeWorktreeTests(unittest.TestCase):
+    """#210 Esc 5: el guard lee `baseBranches` del config del checkout principal desde un
+    worktree sin `.claude/`, y deja rastro cuando cae a los defaults por un "no se"."""
+
+    def _principal_con_worktree(self, base: Path, config_texto: str) -> tuple[Path, Path]:
+        principal = base / "principal"
+        principal.mkdir()
+        _preparar_repo(principal, "main", perfil="consumidor")
+        (principal / ".claude/timonel.config.json").write_text(config_texto, encoding="utf-8")
+        wt = base / "wt"
+        subprocess.run(["git", "worktree", "add", "-q", "-b", "hu/210-x", str(wt)], cwd=principal, check=True)
+        return principal, wt
+
+    def _bases_en(self, directorio: Path) -> tuple[list[str], str]:
+        previo = Path.cwd()
+        err = io.StringIO()
+        try:
+            os.chdir(directorio)
+            with contextlib.redirect_stderr(err):
+                return gi._bases_configuradas(), err.getvalue()
+        finally:
+            os.chdir(previo)
+
+    def test_bases_desde_worktree_vienen_del_config_principal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, wt = self._principal_con_worktree(Path(tmp).resolve(), json.dumps({"git": {"baseBranches": ["trunk"]}}))
+            bases, rastro = self._bases_en(wt)
+        self.assertEqual(bases, ["trunk"])
+        self.assertEqual(rastro, "")
+
+    def test_config_ilegible_cae_a_defaults_con_rastro(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, wt = self._principal_con_worktree(Path(tmp).resolve(), "{no es json")
+            bases, rastro = self._bases_en(wt)
+        self.assertEqual(bases, gi.BASES_POR_DEFECTO)
+        self.assertIn("config ilegible", rastro)
+
+    def test_no_se_cae_a_defaults_con_rastro(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bases, rastro = self._bases_en(Path(tmp).resolve())
+        self.assertEqual(bases, gi.BASES_POR_DEFECTO)
+        self.assertIn("no se resolvio el config", rastro)
+        self.assertIn("not a git repository", rastro)
+
+    def test_compuerta_del_hook_deja_pasar_al_worktree_sin_claude(self):
+        """`gh pr merge` siempre se bloquea; sin la rama de la compuerta el worktree salia con 0."""
+        comando = _comando_guard_integracion()
+        with tempfile.TemporaryDirectory() as tmp:
+            _, wt = self._principal_con_worktree(Path(tmp).resolve(), json.dumps({"git": {"baseBranches": ["main"]}}))
+            self.assertFalse((wt / ".claude").exists())
+            resultado = _correr_hook(comando, "gh pr merge 1", wt, plugin_root=str(ROOT))
+        self.assertEqual(resultado.returncode, 2, f"stderr={resultado.stderr!r}")
+        self.assertIn("[timonel] Bloqueado: ", resultado.stderr)
 
 
 class GuardCommitsResuelveRepoDestinoTests(unittest.TestCase):

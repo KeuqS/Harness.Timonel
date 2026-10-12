@@ -45,16 +45,56 @@ TIPOS_NORMALIZADOS = {"Convención": "Convencion", "Heurística": "Heuristica"}
 PLUGIN_MANIFEST = Path(".claude-plugin/plugin.json")
 
 
+GIT_TIMEOUT_SEGUNDOS = 5
+
+
+def _git_common_dir() -> tuple[Path | None, str]:
+    """`git rev-parse --git-common-dir` absoluto. (None, motivo) si git no responde."""
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, check=False, timeout=GIT_TIMEOUT_SEGUNDOS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"git no respondio: {exc}"
+    if proc.returncode != 0:
+        return None, f"git rev-parse fallo (rc={proc.returncode}): {proc.stderr.strip()}"
+    return Path(proc.stdout.strip()), ""
+
+
+def resolver_config_path(local: Path = CONFIG_PATH) -> tuple[Path | None, str]:
+    """Donde vive el config del consumidor, con tres respuestas (#210): (ruta, "") si lo
+    sabe, (None, motivo) si no puede saberlo. Un worktree no hereda `.claude/` (esta sin
+    versionar): si el config local no existe se busca en el checkout principal, el padre
+    del common-dir `.git`. Bare y submodulo (common-dir que no se llama `.git`) son "no se"."""
+    if local.exists():
+        return local, ""
+    common, motivo = _git_common_dir()
+    if common is None:
+        return None, motivo
+    if common.name != ".git":
+        return None, f"el common-dir {common} no es un `.git` de checkout (bare o submodulo)"
+    return common.parent / local, ""
+
+
 def load_config(path: Path = CONFIG_PATH) -> dict:
     """Config del consumidor. Dentro del repo del plugin (TIM-ADR-0005) devuelve un
-    config minimo con github.repo = repo actual, para que los comandos funcionen ahi."""
-    if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
-    if PLUGIN_MANIFEST.exists():
+    config minimo con github.repo = repo actual, para que los comandos funcionen ahi.
+    Sin `path` explicito y sin config local, lo busca en el checkout principal (#210)."""
+    if not path.exists() and PLUGIN_MANIFEST.exists():
         repo = gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner").strip()
         return {"projectName": "timonel", "github": {"repo": repo}, "modulos": ["plugin"]}
+    destino = path
+    if not path.exists() and path == CONFIG_PATH:
+        destino, motivo = resolver_config_path(path)
+        if destino is None:
+            raise SystemExit(
+                f"ERROR: no se pudo resolver el checkout principal para buscar {path}: {motivo}"
+            )
+    if destino.exists():
+        return json.loads(destino.read_text(encoding="utf-8"))
     raise SystemExit(
-        f"ERROR: no se encontro {path}. Ejecuta /timonel:onboard en la raiz del consumidor."
+        f"ERROR: no se encontro {destino}. Ejecuta /timonel:onboard en la raiz del consumidor."
     )
 
 

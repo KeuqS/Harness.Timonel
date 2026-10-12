@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.0 — en desarrollo
+
+- `timonel_gh.load_config()` resuelve `.claude/timonel.config.json` desde el checkout principal (`git rev-parse --path-format=absolute --git-common-dir`, solo si el common-dir se llama `.git`) cuando el CWD es un worktree sin `.claude/`; el fallo de git es un "no sé" con su stderr ("no se pudo resolver el checkout principal"), distinto de "no se encontro"; `guard_integracion.py` reutiliza el resolvedor y deja rastro al caer a las bases por defecto, y la compuerta del hook del guard en `hooks/hooks.json` acepta el config del checkout principal. Tests: `ResolverConfigWorktreeTests` y `GuardResuelveConfigDesdeWorktreeTests`; 393 en verde (#210)
+
 ## 0.12.0 — 2026-10-08
 
 - `scripts/mutar_literal.py` mide por mutación si un test cubre un literal: copia el repo a un directorio temporal, borra el literal de las líneas que lo contienen o mueve esas líneas al final de la sección `--a`, corre `unittest` en la copia y reporta `lineas mutadas: K` y `fallos: N de M`; todo "no sé" (literal ausente, copia idéntica, destino inexistente, 0 tests, salida no parseable, ruta inválida) sale con código 2; 31 tests en `tests/test_mutar_literal.py`; 375 en verde (#263)

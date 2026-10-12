@@ -1,7 +1,10 @@
 import argparse
+import contextlib
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -1277,6 +1280,123 @@ class MetricasTests(unittest.TestCase):
         self.assertAlmostEqual(m["lead_time_prom"], 1.5)
         self.assertEqual(m["bloqueadas"], 1)
         self.assertIn("50%", mf.reporte(m, mf.calcular_ratchet(cerradas, abiertas), None))
+
+
+@contextlib.contextmanager
+def _en(directorio: Path):
+    previo = Path.cwd()
+    os.chdir(directorio)
+    try:
+        yield
+    finally:
+        os.chdir(previo)
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+class ResolverConfigWorktreeTests(unittest.TestCase):
+    """#210: un worktree no hereda `.claude/` (sin versionar); `load_config` y el
+    resolvedor deben hallar el config del checkout principal, y decir "no se" (con el
+    stderr de git) cuando no pueden resolverlo, nunca "no se encontro"."""
+
+    CONFIG = {"projectName": "demo", "github": {"repo": "o/r"}, "git": {"baseBranches": ["trunk"]}}
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name).resolve()
+        self.principal = self.base / "principal"
+        self.principal.mkdir()
+        _git(self.principal, "init", "-q", "-b", "main")
+        _git(self.principal, "config", "user.name", "t")
+        _git(self.principal, "config", "user.email", "t@t.co")
+        _git(self.principal, "commit", "--allow-empty", "-q", "-m", "init #210")
+        (self.principal / ".claude").mkdir()
+        (self.principal / ".claude/timonel.config.json").write_text(json.dumps(self.CONFIG), encoding="utf-8")
+        self.worktree = self.base / "wt"
+        _git(self.principal, "worktree", "add", "-q", "-b", "hu/210-x", str(self.worktree))
+
+    def test_worktree_sin_claude_resuelve_el_config_del_principal(self):
+        with _en(self.worktree):
+            self.assertEqual(tg.load_config()["git"]["baseBranches"], ["trunk"])
+            ruta, motivo = tg.resolver_config_path()
+        self.assertEqual(ruta.resolve(), (self.principal / ".claude/timonel.config.json").resolve())
+        self.assertEqual(motivo, "")
+
+    def test_subdirectorio_de_worktree_resuelve_el_config_del_principal(self):
+        sub = self.worktree / "a" / "b"
+        sub.mkdir(parents=True)
+        with _en(sub):
+            self.assertEqual(tg.load_config()["projectName"], "demo")
+
+    def test_config_local_gana_y_no_consulta_git(self):
+        (self.worktree / ".claude").mkdir()
+        (self.worktree / ".claude/timonel.config.json").write_text(
+            json.dumps({"projectName": "local"}), encoding="utf-8")
+        with _en(self.worktree), mock.patch.object(tg.subprocess, "run", side_effect=AssertionError("git")):
+            self.assertEqual(tg.load_config()["projectName"], "local")
+            self.assertEqual(tg.resolver_config_path()[0], tg.CONFIG_PATH)
+
+    def test_fuera_de_git_dice_no_se_con_stderr_de_git(self):
+        fuera = self.base / "fuera"
+        fuera.mkdir()
+        with _en(fuera), self.assertRaises(SystemExit) as ctx:
+            tg.load_config()
+        msg = str(ctx.exception)
+        self.assertIn("no se pudo resolver el checkout principal", msg)
+        self.assertIn("not a git repository", msg)
+        self.assertNotIn("no se encontro", msg)
+
+    def test_git_ausente_dice_no_se(self):
+        with _en(self.worktree), mock.patch.object(tg.subprocess, "run", side_effect=FileNotFoundError("git")):
+            ruta, motivo = tg.resolver_config_path()
+        self.assertIsNone(ruta)
+        self.assertIn("git no respondio", motivo)
+
+    def test_repo_bare_dice_no_se(self):
+        bare = self.base / "x.git"
+        _git(self.base, "init", "-q", "--bare", str(bare))
+        with _en(bare):
+            ruta, motivo = tg.resolver_config_path()
+            with self.assertRaises(SystemExit) as ctx:
+                tg.load_config()
+        self.assertIsNone(ruta)
+        self.assertIn("no es un `.git` de checkout", motivo)
+        self.assertIn("no se pudo resolver el checkout principal", str(ctx.exception))
+
+    def test_submodulo_dice_no_se(self):
+        sub = self.principal / "sm"
+        _git(self.principal, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(self.principal), "sm")
+        with _en(sub):
+            ruta, motivo = tg.resolver_config_path()
+        self.assertIsNone(ruta)
+        self.assertIn("no es un `.git` de checkout", motivo)
+
+    def test_repo_normal_sin_config_dice_no_se_encontro(self):
+        otro = self.base / "otro"
+        otro.mkdir()
+        _git(otro, "init", "-q", "-b", "main")
+        with _en(otro), self.assertRaises(SystemExit) as ctx:
+            tg.load_config()
+        self.assertIn("no se encontro", str(ctx.exception))
+        self.assertNotIn("no se pudo resolver", str(ctx.exception))
+
+    def test_perfil_plugin_sin_config_devuelve_config_minimo(self):
+        (self.worktree / ".claude-plugin").mkdir()
+        (self.worktree / ".claude-plugin/plugin.json").write_text('{"name": "timonel"}', encoding="utf-8")
+        with _en(self.worktree), mock.patch.object(tg, "gh", return_value="o/timonel\n") as gh_mock:
+            cfg = tg.load_config()
+        self.assertEqual(cfg["modulos"], ["plugin"])
+        self.assertEqual(cfg["github"]["repo"], "o/timonel")
+        gh_mock.assert_called_once()
+
+    def test_path_explicito_no_consulta_git(self):
+        with _en(self.worktree), mock.patch.object(tg.subprocess, "run", side_effect=AssertionError("git")):
+            with self.assertRaises(SystemExit) as ctx:
+                tg.load_config(Path("otro/config.json"))
+        self.assertIn("no se encontro", str(ctx.exception))
 
 
 if __name__ == "__main__":

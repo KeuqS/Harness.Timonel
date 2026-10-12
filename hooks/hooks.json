@@ -56,7 +56,7 @@
           },
           {
             "type": "command",
-            "command": "es_plugin=0; [ -f .claude-plugin/plugin.json ] && jq -e '.name==\"timonel\"' .claude-plugin/plugin.json >/dev/null 2>&1 && es_plugin=1; [ -f .claude/timonel.config.json ] || [ \"$es_plugin\" = 1 ] || exit 0; script=\"${CLAUDE_PLUGIN_ROOT:-}/scripts/guard_integracion.py\"; if [ ! -f \"$script\" ] && [ \"$es_plugin\" = 1 ]; then script=./scripts/guard_integracion.py; fi; [ -f \"$script\" ] || exit 0; python3 \"$script\""
+            "command": "es_plugin=0; [ -f .claude-plugin/plugin.json ] && jq -e '.name==\"timonel\"' .claude-plugin/plugin.json >/dev/null 2>&1 && es_plugin=1; c=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); principal=0; case \"$c\" in */.git) [ -f \"${c%/.git}/.claude/timonel.config.json\" ] && principal=1;; esac; [ -f .claude/timonel.config.json ] || [ \"$principal\" = 1 ] || [ \"$es_plugin\" = 1 ] || exit 0; script=\"${CLAUDE_PLUGIN_ROOT:-}/scripts/guard_integracion.py\"; if [ ! -f \"$script\" ] && [ \"$es_plugin\" = 1 ]; then script=./scripts/guard_integracion.py; fi; [ -f \"$script\" ] || exit 0; python3 \"$script\""
           }
         ]
       }

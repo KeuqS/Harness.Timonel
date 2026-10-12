@@ -153,12 +153,13 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+import timonel_gh
+
 PREFIJO = "[timonel] Bloqueado: "
 
 # Refs que solo pueden adelantar la copia local a lo ya publicado y revisado.
 REFS_DE_SINCRONIA = {"", "@{u}", "@{upstream}"}
 
-CONFIG_CONSUMIDOR = Path(".claude/timonel.config.json")
 BASES_POR_DEFECTO = ["main", "master", "develop"]
 
 EVENTS_LOG = Path(".timonel/events.log")
@@ -838,15 +839,20 @@ def _rama_de_dir_real() -> Callable[[str], str | None]:
 
 
 def _bases_configuradas() -> list[str]:
-    if CONFIG_CONSUMIDOR.exists():
-        try:
-            config = json.loads(CONFIG_CONSUMIDOR.read_text(encoding="utf-8"))
-            bases = config.get("git", {}).get("baseBranches")
-            if bases:
-                return list(bases)
-        except (OSError, ValueError):
-            pass
-    return list(BASES_POR_DEFECTO)
+    """Bases del config del consumidor (tambien desde un worktree, #210). Fail-open a
+    BASES_POR_DEFECTO, pero dejando rastro en stderr cuando no pudo leer el config."""
+    ruta, motivo = timonel_gh.resolver_config_path()
+    if ruta is None:
+        print(f"[timonel] aviso: bases por defecto, no se resolvio el config: {motivo}", file=sys.stderr)
+        return list(BASES_POR_DEFECTO)
+    if not ruta.exists():
+        return list(BASES_POR_DEFECTO)
+    try:
+        bases = json.loads(ruta.read_text(encoding="utf-8")).get("git", {}).get("baseBranches")
+    except (OSError, ValueError, AttributeError) as exc:
+        print(f"[timonel] aviso: bases por defecto, config ilegible {ruta}: {exc}", file=sys.stderr)
+        return list(BASES_POR_DEFECTO)
+    return list(bases) if bases else list(BASES_POR_DEFECTO)
 
 
 def main() -> int:
