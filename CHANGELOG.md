@@ -2,7 +2,7 @@
 
 ## 0.14.0 — en desarrollo
 
-- `agents/flechodiezx-hotfix.md` acepta el modo "rama del usuario": con una rama y un worktree propios pedidos por el usuario, pasa `directorio_trabajo: <ruta>` al review (Fase 3) y a la Fase 6, y el camino normal (`isolation: worktree`, rama `fix/<N>-<slug>`) queda intacto. Tests: `ModoRamaDelUsuarioHotfixTests` con 8 casos en `tests/test_consistencia.py`; 410 en verde (#268)
+- `agents/flechodiezx-hotfix.md` acepta el modo "rama del usuario": con una rama y un worktree propios pedidos por el usuario, pasa `directorio_trabajo: <ruta>` al review (Fase 3) y a la Fase 6, y el camino normal (`isolation: worktree`, rama `fix/<N>-<slug>`) queda intacto. Tests: `ModoRamaDelUsuarioHotfixTests` con 9 casos en `tests/test_consistencia.py`; 411 en verde (#268)
 
 ## 0.13.0 — 2026-10-09
 
