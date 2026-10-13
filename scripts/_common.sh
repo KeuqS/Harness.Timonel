@@ -27,9 +27,11 @@ resolve_plugin_root() {
 # load_timonel_config [config_path]
 #
 # Carga .claude/timonel.config.json del consumidor y exporta TIMONEL_*.
-# Retorna 1 con mensaje claro si falta el archivo, jq o github.repo.
+# Retorna 1 con mensaje claro si falta el archivo, jq o github.repo. Sin argumento
+# y sin config local, lo busca en el checkout principal (resolver_config_consumidor, #282).
 load_timonel_config() {
     local config="${1:-.claude/timonel.config.json}"
+    local explicito="${1:+si}"
 
     if ! command -v jq >/dev/null 2>&1; then
         echo "ERROR: jq no esta instalado. Requerido para leer $config" >&2
@@ -43,6 +45,17 @@ load_timonel_config() {
         export TIMONEL_MODULOS="plugin"
         export TIMONEL_API_PROJECT="" TIMONEL_API_PATH="" TIMONEL_API_MODULE_FILE="" TIMONEL_FRONTEND_PROJECTS="" TIMONEL_MODELOS_ALIAS="" TIMONEL_MODELOS_PATH="" TIMONEL_HEURISTICS_DIR=""
         [ -n "$TIMONEL_REPO" ] && return 0
+    fi
+    if [ ! -f "$config" ] && [ -z "$explicito" ]; then
+        local resuelto rc=0
+        resuelto="$(resolver_config_consumidor "$config" 2>&1)" || rc=$?
+        case "$rc" in
+            0) config="$resuelto" ;;
+            2)
+                echo "ERROR: $resuelto" >&2
+                return 1
+                ;;
+        esac
     fi
     if [ ! -f "$config" ]; then
         echo "ERROR: no se encontro $config" >&2
@@ -70,6 +83,45 @@ load_timonel_config() {
         */*) ;;
         *) echo "ERROR: github.repo debe tener la forma owner/repo (recibido: $TIMONEL_REPO)" >&2; return 1 ;;
     esac
+}
+
+# resolver_config_consumidor [local]
+#
+# Donde vive el config del consumidor, con tres respuestas (#282, espejo de
+# timonel_gh.resolver_config_path): imprime la ruta por stdout.
+#   rc 0  si: el config local existe (sin ejecutar git) o el del checkout principal.
+#   rc 1  no: checkout resuelto, pero sin config. Silencio.
+#   rc 2  no se: git rev-parse falla, o el common-dir no se llama `.git` (bare,
+#         submodulo). stderr: `no se pudo resolver el checkout principal: <motivo>`.
+# Sin efectos: solo variables locales. `--path-format=absolute` evita que git
+# devuelva `.git` en la raiz del checkout y `../.git` en un subdirectorio.
+# Sin timeout: a diferencia de timonel_gh._git_common_dir (5 s), bash no tiene
+# uno portable (macOS no trae `timeout`); `git rev-parse` es local y no bloquea.
+resolver_config_consumidor() {
+    local local_cfg="${1:-.claude/timonel.config.json}"
+    local common principal
+
+    if [ -f "$local_cfg" ]; then
+        echo "$local_cfg"
+        return 0
+    fi
+    if ! common="$(git rev-parse --path-format=absolute --git-common-dir 2>&1)"; then
+        echo "no se pudo resolver el checkout principal: $common" >&2
+        return 2
+    fi
+    case "$common" in
+        */.git) ;;
+        *)
+            echo "no se pudo resolver el checkout principal: el common-dir $common no es un .git de checkout (bare o submodulo)" >&2
+            return 2
+            ;;
+    esac
+    principal="${common%/.git}/$local_cfg"
+    if [ -f "$principal" ]; then
+        echo "$principal"
+        return 0
+    fi
+    return 1
 }
 
 # require_gh
