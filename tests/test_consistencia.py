@@ -1654,6 +1654,20 @@ class HeuristicasDescubriblesTests(unittest.TestCase):
                 "alcanza y sus heuristicas son codigo muerto. Documenta la regla que la deriva o no la crees",
             )
 
+    # --- #283: una copia inevitable queda atada por un test de paridad -----------------
+
+    def test_heuristica_nombra_la_paridad(self):
+        """`sensor-importa-no-reimplementa.md` dice, en `## Cuando NO aplica`, que la copia
+        inevitable (un hook shell no puede importar Python) se ata con un test de paridad."""
+        archivo = ROOT / "heuristics/general/sensor-importa-no-reimplementa.md"
+        cuerpo = self._cuerpo_de_seccion(archivo.read_text(encoding="utf-8"), "Cuándo NO aplica")
+        self.assertIsNotNone(cuerpo, f"{archivo.name} no tiene `## Cuándo NO aplica`")
+        viñetas = re.split(r"^- ", cuerpo, flags=re.M)[1:]
+        self.assertTrue(
+            any(all(t in v for t in ("paridad", "CHANGELOG", "#210")) for v in viñetas),
+            "ninguna viñeta de `## Cuándo NO aplica` nombra a la vez `paridad`, `CHANGELOG` y `#210`",
+        )
+
 
 class NoSeSiSeLeen(Exception):
     """El analisis no puede decidir si un argumento se lee: es un no-se, no un no."""
