@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import detectar_commit as dc  # noqa: E402
 import guard_integracion as gi  # noqa: E402
+import timonel_gh as tg  # noqa: E402
 
 BLOQUEADO = "bloqueado"
 PERMITIDO = "permitido"
@@ -801,6 +802,103 @@ class GuardResuelveConfigDesdeWorktreeTests(unittest.TestCase):
             resultado = _correr_hook(comando, "gh pr merge 1", wt, plugin_root=str(ROOT))
         self.assertEqual(resultado.returncode, 2, f"stderr={resultado.stderr!r}")
         self.assertIn("[timonel] Bloqueado: ", resultado.stderr)
+
+
+class ParidadCompuertaResolverTests(unittest.TestCase):
+    """#283: la regla "el padre del common-dir solo vale si se llama `.git`" vive dos veces:
+    en Python (`tg.resolver_config_path`) y en la compuerta shell del guard de hooks.json
+    (un hook shell no puede importar Python). Aca se atan: sobre los mismos repos de
+    juguete, "la compuerta abre" == "el resolvedor devuelve una ruta que existe", y el
+    "no se" de Python (None, motivo) == compuerta cerrada. Si una copia cambia, falla."""
+
+    CONFIG = json.dumps({"github": {"repo": "o/r"}})
+    ABREN = {"principal con config", "worktree sin .claude/", "subdirectorio de consumidor"}
+
+    @staticmethod
+    def _git(cwd: Path, *args: str) -> None:
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+    def _repo(self, destino: Path, perfil: str = "consumidor") -> Path:
+        destino.mkdir(parents=True)
+        _preparar_repo(destino, "main", perfil=perfil)
+        return destino
+
+    def _worktree(self, principal: Path, nombre: str) -> Path:
+        wt = principal.parent / nombre
+        self._git(principal, "worktree", "add", "-q", "-b", f"hu/283-{nombre}", str(wt))
+        return wt
+
+    def _bare_desde_subdirectorio(self, base: Path) -> Path:
+        # Desde un subdirectorio: en la raiz, el chequeo local `[ -f .claude/... ]` enmascara la regla.
+        base.mkdir()
+        bare = base / "x.git"
+        self._git(base, "init", "-q", "--bare", str(bare))
+        (bare / "sub").mkdir()
+        (bare / ".claude").mkdir()
+        (bare / ".claude/timonel.config.json").write_text(self.CONFIG, encoding="utf-8")
+        return bare / "sub"
+
+    def _submodulo(self, base: Path) -> Path:
+        base.mkdir()
+        principal = self._repo(base / "pr")
+        self._git(principal, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(principal), "sm")
+        modulo = principal / ".git/modules/sm/.claude"
+        modulo.mkdir()
+        (modulo / "timonel.config.json").write_text(self.CONFIG, encoding="utf-8")
+        return principal / "sm"
+
+    def _casos(self, base: Path) -> dict[str, Path]:
+        principal = self._repo(base / "principal")
+        subdirectorio = principal / "a" / "b"
+        subdirectorio.mkdir(parents=True)
+        sin_config = self._repo(base / "otro" / "principal")
+        (sin_config / ".claude/timonel.config.json").unlink()
+        return {
+            "principal con config": principal,
+            "worktree sin .claude/": self._worktree(principal, "wt"),
+            "subdirectorio de consumidor": subdirectorio,
+            "repo no consumidor": self._repo(base / "sin" / "principal", perfil="ninguno"),
+            "worktree cuyo principal no tiene config": self._worktree(sin_config, "wt_sin_config"),
+            "bare desde un subdirectorio": self._bare_desde_subdirectorio(base / "bare_base"),
+            "submodulo desde su raiz de trabajo": self._submodulo(base / "sm_base"),
+        }
+
+    @staticmethod
+    def _python_resuelve(cwd: Path) -> bool:
+        previo = Path.cwd()
+        try:
+            os.chdir(cwd)
+            ruta, _motivo = tg.resolver_config_path()
+            # La ruta local es relativa: `exists()` se evalua con el mismo cwd que la produjo.
+            return ruta is not None and ruta.exists()
+        finally:
+            os.chdir(previo)
+
+    def _compuerta_abre(self, comando: str, cwd: Path) -> bool:
+        resultado = _correr_hook(comando, "gh pr merge 1", cwd, plugin_root=str(ROOT))
+        if resultado.returncode == 2:
+            self.assertIn("[timonel] Bloqueado", resultado.stderr)
+            return True
+        self.assertEqual(resultado.returncode, 0, f"stderr={resultado.stderr!r}")
+        return False
+
+    def _decisiones(self, comando: str) -> dict[str, tuple[bool, bool]]:
+        with tempfile.TemporaryDirectory() as tmp:
+            casos = self._casos(Path(tmp).resolve())
+            return {
+                nombre: (self._compuerta_abre(comando, cwd), self._python_resuelve(cwd))
+                for nombre, cwd in casos.items()
+            }
+
+    def test_compuerta_y_resolver_deciden_igual(self):
+        for nombre, (abre, resuelve) in self._decisiones(_comando_guard_integracion()).items():
+            with self.subTest(caso=nombre):
+                self.assertEqual(abre, resuelve, f"compuerta abre={abre}, resolver_config_path resuelve={resuelve}")
+
+    def test_los_casos_cubren_abiertos_y_cerrados(self):
+        """Sin esto, una compuerta siempre cerrada y un resolvedor siempre None "coincidirian"."""
+        abiertos = {n for n, (abre, _) in self._decisiones(_comando_guard_integracion()).items() if abre}
+        self.assertEqual(abiertos, self.ABREN)
 
 
 class GuardCommitsResuelveRepoDestinoTests(unittest.TestCase):
