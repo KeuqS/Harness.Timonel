@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.17.0 — en desarrollo
+## 0.17.0 — 2026-10-13
 
 - `scripts/_common.sh` gana `resolver_config_consumidor`: desde un worktree sin `.claude/timonel.config.json` propio, `load_timonel_config` resuelve el config en el checkout principal (padre del common-dir solo si se llama `.git`, con `--path-format=absolute`), con config local ganando sin ejecutar git y `no sé: <motivo>` (nunca un "no existe" falso) en bare, submódulo o fuera de git; sourcear no exporta ni imprime. Tests nuevos: `tests/test_common_sh.py` (`LoadTimonelConfigTests` y `ResolverSinEfectosTests`, escenarios E1-E4) y la decisión shell sumada a `ParidadCompuertaResolverTests`; verificación del plugin en verde con 458 tests (`verificar_plugin.py` PASSED). (#282)
 
