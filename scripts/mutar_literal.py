@@ -27,6 +27,11 @@ Modos (la unidad es la linea; se mutan TODAS las que contienen el literal):
             Seccion = desde el encabezado
             hasta el siguiente de nivel <= al suyo, o fin de archivo.
 
+Borrar una llamada completa con sus paréntesis (`f(x)` entero) deja la copia
+con un error de sintaxis: los tests no importan, el objetivo "no se encuentra"
+y sale `no sé` (exit 2). Hay que mutar el argumento o la condicion, no la
+llamada entera.
+
 Sin `--test` corre `unittest discover -s tests` en la copia.
 
 Stdout: `lineas mutadas: K`, `fallos: N de M` y `base: B de M`, en ese orden y
@@ -179,10 +184,15 @@ def correr_unittest(copia: Path, objetivo: str | None) -> str:
     cmd = [sys.executable, "-m", "unittest"] + (
         [objetivo] if objetivo else ["discover", "-s", "tests"]
     )
+    # Los tests importan hermanos (`from test_x import ...`): `<copia>/tests`
+    # va delante del PYTHONPATH del llamador, que se conserva (#286).
+    pythonpath = os.pathsep.join(
+        [str(copia / "tests"), *filter(None, [os.environ.get("PYTHONPATH")])]
+    )
     try:
         r = subprocess.run(
             cmd, cwd=copia, capture_output=True, text=True, timeout=TIMEOUT_S,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": pythonpath},
         )
     except subprocess.TimeoutExpired:
         raise NoSe("timeout")

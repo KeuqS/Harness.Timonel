@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import io
+import os
 import re
 import shutil
 import subprocess
@@ -403,6 +404,63 @@ class TestBase(unittest.TestCase):
     def test_la_linea_de_fallos_conserva_su_forma(self):
         r = _correr(self.repo, "--ruta", "doc.md", "--literal", "MARCA", "--modo", "borrar")
         self.assertRegex(r.stdout, re.compile(r"^fallos: (\d+) de (\d+)$", re.MULTILINE))
+
+
+class PythonpathDeLaCopiaTests(unittest.TestCase):
+    """#286: los tests importan modulos hermanos (`from test_markers import ...`),
+    asi que la copia necesita `<copia>/tests` en PYTHONPATH."""
+
+    def test_objetivo_con_import_de_hermano_corre_sin_pythonpath(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            (repo / "tests").mkdir(parents=True)
+            (repo / "doc.md").write_text("alfa MARCA\n", encoding="utf-8")
+            (repo / "tests" / "hermano.py").write_text(
+                'from pathlib import Path\nDOC = (Path(__file__).resolve().parents[1] / "doc.md").read_text()\n',
+                encoding="utf-8",
+            )
+            (repo / "tests" / "test_usa_hermano.py").write_text(
+                "import unittest\nfrom hermano import DOC\n\n\n"
+                "class T(unittest.TestCase):\n"
+                "    def test_marca(self):\n"
+                '        self.assertIn("MARCA", DOC)\n',
+                encoding="utf-8",
+            )
+            env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+            r = subprocess.run(
+                [sys.executable, str(SCRIPT), "--ruta", "doc.md", "--literal", "MARCA",
+                 "--modo", "borrar", "--test", "tests.test_usa_hermano"],
+                cwd=repo, capture_output=True, text=True, timeout=120, env=env,
+            )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), ["lineas mutadas: 1", "fallos: 1 de 1", "base: 0 de 1"])
+
+    def _env_pasado(self, pythonpath: str | None) -> dict[str, str]:
+        previo = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        if pythonpath is not None:
+            previo["PYTHONPATH"] = pythonpath
+        copia = Path("/copia")
+        with mock.patch.dict(os.environ, previo, clear=True), mock.patch.object(
+            ml.subprocess, "run",
+            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        ) as run:
+            ml.correr_unittest(copia, None)
+        return run.call_args.kwargs["env"]
+
+    def test_sin_pythonpath_previo_el_subproceso_recibe_solo_tests_de_la_copia(self):
+        self.assertEqual(self._env_pasado(None)["PYTHONPATH"], str(Path("/copia") / "tests"))
+
+    def test_con_pythonpath_previo_se_antepone_tests_y_se_conserva_el_del_llamador(self):
+        env = self._env_pasado("/x")
+        self.assertEqual(env["PYTHONPATH"], os.pathsep.join([str(Path("/copia") / "tests"), "/x"]))
+
+
+class DocstringAvisaBorrarLlamadaTests(unittest.TestCase):
+    def test_el_docstring_avisa_que_borrar_una_llamada_con_parentesis_da_no_se(self):
+        doc = ml.__doc__
+        self.assertIn("paréntesis", doc)
+        self.assertIn("sintaxis", doc)
+        self.assertIn("mutar el argumento", doc)
 
 
 class EscenarioRealContraElRepoTests(unittest.TestCase):
