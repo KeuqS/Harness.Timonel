@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.17.0 — en desarrollo
+
+- `scripts/_common.sh` gana `resolver_config_consumidor`: desde un worktree sin `.claude/timonel.config.json` propio, `load_timonel_config` resuelve el config en el checkout principal (padre del common-dir solo si se llama `.git`, con `--path-format=absolute`), con config local ganando sin ejecutar git y `no sé: <motivo>` (nunca un "no existe" falso) en bare, submódulo o fuera de git; sourcear no exporta ni imprime. Tests nuevos: `tests/test_common_sh.py` (`LoadTimonelConfigTests` y `ResolverSinEfectosTests`, escenarios E1-E4) y la decisión shell sumada a `ParidadCompuertaResolverTests`; verificación del plugin en verde con 458 tests (`verificar_plugin.py` PASSED). (#282)
+
 ## 0.16.0 — 2026-10-13
 
 - La regla "el padre del common-dir solo vale si se llama `.git`" vive en dos lugares, la compuerta del guard en `hooks/hooks.json` y `scripts/timonel_gh.py::resolver_config_path`, y ahora una sola prueba los ata: `ParidadCompuertaResolverTests` (`tests/test_hooks_integracion.py`) compara ambas decisiones sobre 7 repos de juguete (principal, worktree, subdirectorio de consumidor, no consumidor, worktree con principal sin config, bare desde subdirectorio, submódulo); la regla también rige en subdirectorios de un consumidor, efecto que la entrada 0.13.0 no nombraba; la heurística `sensor-importa-no-reimplementa` dice ahora que la copia inevitable se ata con un test de paridad (absorbe #285); 446 en verde (#283, #285)
