@@ -882,22 +882,33 @@ class ParidadCompuertaResolverTests(unittest.TestCase):
         self.assertEqual(resultado.returncode, 0, f"stderr={resultado.stderr!r}")
         return False
 
-    def _decisiones(self, comando: str) -> dict[str, tuple[bool, bool]]:
+    @staticmethod
+    def _shell_resuelve(cwd: Path) -> bool:
+        """#282: la funcion `resolver_config_consumidor` de `_common.sh` (rc 0 y la ruta existe)."""
+        resultado = subprocess.run(
+            ["bash", "-c", f'source "{ROOT / "scripts/_common.sh"}" && resolver_config_consumidor'],
+            capture_output=True, text=True, cwd=cwd,
+        )
+        # La ruta local es relativa: se evalua con el mismo cwd que la produjo.
+        return resultado.returncode == 0 and (cwd / resultado.stdout.strip()).exists()
+
+    def _decisiones(self, comando: str) -> dict[str, tuple[bool, bool, bool]]:
         with tempfile.TemporaryDirectory() as tmp:
             casos = self._casos(Path(tmp).resolve())
             return {
-                nombre: (self._compuerta_abre(comando, cwd), self._python_resuelve(cwd))
+                nombre: (self._compuerta_abre(comando, cwd), self._python_resuelve(cwd), self._shell_resuelve(cwd))
                 for nombre, cwd in casos.items()
             }
 
     def test_compuerta_y_resolver_deciden_igual(self):
-        for nombre, (abre, resuelve) in self._decisiones(_comando_guard_integracion()).items():
+        for nombre, (abre, resuelve, shell) in self._decisiones(_comando_guard_integracion()).items():
             with self.subTest(caso=nombre):
                 self.assertEqual(abre, resuelve, f"compuerta abre={abre}, resolver_config_path resuelve={resuelve}")
+                self.assertEqual(abre, shell, f"compuerta abre={abre}, resolver_config_consumidor resuelve={shell}")
 
     def test_los_casos_cubren_abiertos_y_cerrados(self):
         """Sin esto, una compuerta siempre cerrada y un resolvedor siempre None "coincidirian"."""
-        abiertos = {n for n, (abre, _) in self._decisiones(_comando_guard_integracion()).items() if abre}
+        abiertos = {n for n, (abre, *_) in self._decisiones(_comando_guard_integracion()).items() if abre}
         self.assertEqual(abiertos, self.ABREN)
 
 
