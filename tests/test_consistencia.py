@@ -1366,6 +1366,46 @@ class TestsVerdesPrimeraCorridaTests(unittest.TestCase):
                 )
 
 
+class VerificarPluginCitadoTests(unittest.TestCase):
+    """Los tres consumidores de la verificacion citan el script unico (#270), en la
+    seccion/item donde se ejerce y no en cualquier parte del archivo: un literal
+    que sobrevive en otra seccion no cubre la obligacion
+    (`heuristics/general/unidad-de-verificacion.md`)."""
+
+    LITERAL = "scripts/verificar_plugin.py"
+    AMBITOS = {
+        "skills/implement-plugin-change/SKILL.md": ("## Pasos", "4."),
+        "skills/consolidate-story/SKILL.md": ("## Perfil plugin", "- **Fase B**"),
+        "CLAUDE.md": ("## Verificación antes de commit", None),
+    }
+
+    @staticmethod
+    def _item(recorte: str, inicio: str | None) -> str:
+        """Desde la linea que empieza con `inicio` hasta el siguiente item del mismo
+        nivel (el siguiente `N.` o `- **`), o el fin del recorte."""
+        if inicio is None:
+            return recorte
+        lineas = recorte.splitlines()
+        marca = next((i for i, l in enumerate(lineas) if l.lstrip().startswith(inicio)), None)
+        if marca is None:
+            return ""
+        resto = lineas[marca + 1:]
+        fin = next((i for i, l in enumerate(resto) if re.match(r"(\d+\.|- \*\*)", l)), len(resto))
+        return "\n".join([lineas[marca], *resto[:fin]])
+
+    def test_cada_consumidor_cita_el_script_en_su_ambito(self):
+        self.assertGreaterEqual(len(self.AMBITOS), 3, "invariante vacua: faltan consumidores")
+        for ruta, (seccion, item) in self.AMBITOS.items():
+            with self.subTest(archivo=ruta):
+                texto = (ROOT / ruta).read_text(encoding="utf-8")
+                recorte = self._item(SincronizacionDelWorktreeTests._seccion(texto, seccion), item)
+                self.assertIn(
+                    self.LITERAL, recorte,
+                    f"{ruta}: `{seccion}`{' item ' + item if item else ''} no cita "
+                    f"`{self.LITERAL}`: la verificacion volveria a ser tres comandos a mano",
+                )
+
+
 class CableadoDeMainTests(unittest.TestCase):
     """El contrato de cambio exige un test por decision de `main()` (#224). Caso real:
     #223 muto `draft = None if _hay_draft_abierto(prs) else False` a `draft = False` y
