@@ -574,6 +574,104 @@ def _comando_push_force() -> str:
     raise AssertionError("hooks.json no tiene el guard de push --force")
 
 
+def _comando_con(evento: str, literal: str) -> str:
+    """Comando del hooks.json REAL del evento dado cuyo texto contiene `literal`: se selecciona
+    por CONTENIDO, nunca por indice del array (un hook nuevo insertado antes correria el test
+    contra el hook equivocado)."""
+    hooks = json.loads((ROOT / "hooks/hooks.json").read_text(encoding="utf-8"))
+    for bloque in hooks["hooks"][evento]:
+        for hook in bloque["hooks"]:
+            if literal in hook["command"]:
+                return hook["command"]
+    raise AssertionError(f"hooks.json no tiene ningun hook de {evento} con {literal!r}")
+
+
+def _comando_onboard() -> str:
+    return _comando_con("SessionStart", "No existe .claude/timonel.config.json")
+
+
+def _comando_version_release() -> str:
+    return _comando_con("SessionStart", "latest-release")
+
+
+def _comando_aviso_raiz() -> str:
+    return _comando_con("PostToolUse", "raiz-editada")
+
+
+def _todos_los_comandos() -> list[str]:
+    hooks = json.loads((ROOT / "hooks/hooks.json").read_text(encoding="utf-8"))
+    return [h["command"] for bloques in hooks["hooks"].values() for b in bloques for h in b["hooks"]]
+
+
+def _correr_con_payload(
+    comando_hook: str, payload: dict, cwd: Path, plugin_root: str, path_previo: str = "", env_extra: dict | None = None
+) -> subprocess.CompletedProcess:
+    """Como `_correr_hook` pero con payload libre (los hooks de PostToolUse `Edit|Write` reciben
+    `file_path`, no `command`) y un directorio opcional al frente del PATH (para mockear `gh`)."""
+    env = dict(os.environ)
+    env["CLAUDE_PLUGIN_ROOT"] = plugin_root
+    if path_previo:
+        env["PATH"] = path_previo + os.pathsep + env["PATH"]
+    env.update(env_extra or {})
+    return subprocess.run(
+        ["bash", "-c", comando_hook], input=json.dumps(payload), capture_output=True, text=True, cwd=cwd, env=env
+    )
+
+
+MODULE_FILE = "apps/api/app.module.ts"
+AVISO_RAIZ = "[timonel] Aviso: editaste un archivo raiz del harness"
+AVISO_FALTA_CONFIG = "No existe .claude/timonel.config.json"
+AVISO_VERSION = "Hay una version nueva del plugin"
+
+
+def _abre_por_bloqueo(comando: str, cmd_bash: str, cwd: Path) -> bool:
+    """Compuertas PreToolUse: abierta == el hook bloquea (rc 2 con `[timonel] Bloqueado`)."""
+    resultado = _correr_hook(comando, cmd_bash, cwd, plugin_root=str(ROOT))
+    if resultado.returncode == 2:
+        assert "[timonel] Bloqueado" in resultado.stderr, resultado.stderr
+        return True
+    assert resultado.returncode == 0, resultado.stderr
+    return False
+
+
+def _abre_push_forzado(comando: str, cwd: Path) -> bool:
+    return _abre_por_bloqueo(comando, "git push --force x", cwd)
+
+
+def _abre_guard_integracion(comando: str, cwd: Path) -> bool:
+    return _abre_por_bloqueo(comando, "gh pr merge 1", cwd)
+
+
+def _abre_aviso_raiz(comando: str, cwd: Path) -> bool:
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, cwd=cwd)
+    raiz = Path(top.stdout.strip()) if top.returncode == 0 else cwd
+    resultado = _correr_con_payload(
+        comando, {"tool_input": {"file_path": str(raiz / MODULE_FILE)}}, cwd, plugin_root=str(ROOT)
+    )
+    assert resultado.returncode == 0, resultado.stderr
+    return AVISO_RAIZ in resultado.stdout
+
+
+def _abre_version(comando: str, cwd: Path) -> bool:
+    """`gh` falso que siempre responde una release `v99.0.0`: la compuerta abierta llega a avisar."""
+    with tempfile.TemporaryDirectory() as bin_dir:
+        gh = Path(bin_dir) / "gh"
+        gh.write_text("#!/bin/sh\necho v99.0.0\n", encoding="utf-8")
+        gh.chmod(0o755)
+        resultado = _correr_con_payload(comando, {}, cwd, plugin_root=str(ROOT), path_previo=bin_dir)
+    assert resultado.returncode == 0, resultado.stderr
+    return AVISO_VERSION in resultado.stdout
+
+
+# nombre -> (selector por contenido, sonda): las compuertas que resuelven el config del checkout principal.
+COMPUERTAS_QUE_RESUELVEN_CONFIG = {
+    "guard de integracion": (_comando_guard_integracion, _abre_guard_integracion),
+    "push forzado": (_comando_push_force, _abre_push_forzado),
+    "aviso de archivo raiz": (_comando_aviso_raiz, _abre_aviso_raiz),
+    "aviso de version nueva": (_comando_version_release, _abre_version),
+}
+
+
 def _preparar_repo(
     tmp: Path,
     rama: str,
@@ -804,15 +902,11 @@ class GuardResuelveConfigDesdeWorktreeTests(unittest.TestCase):
         self.assertIn("[timonel] Bloqueado: ", resultado.stderr)
 
 
-class ParidadCompuertaResolverTests(unittest.TestCase):
-    """#283: la regla "el padre del common-dir solo vale si se llama `.git`" vive dos veces:
-    en Python (`tg.resolver_config_path`) y en la compuerta shell del guard de hooks.json
-    (un hook shell no puede importar Python). Aca se atan: sobre los mismos repos de
-    juguete, "la compuerta abre" == "el resolvedor devuelve una ruta que existe", y el
-    "no se" de Python (None, motivo) == compuerta cerrada. Si una copia cambia, falla."""
+class _ReposDeJuguete:
+    """Repos git de juguete (principal, worktree, subdirectorio, bare, submodulo) que comparten
+    la paridad (#283) y las compuertas desde worktree (#281)."""
 
     CONFIG = json.dumps({"github": {"repo": "o/r"}})
-    ABREN = {"principal con config", "worktree sin .claude/", "subdirectorio de consumidor"}
 
     @staticmethod
     def _git(cwd: Path, *args: str) -> None:
@@ -820,7 +914,7 @@ class ParidadCompuertaResolverTests(unittest.TestCase):
 
     def _repo(self, destino: Path, perfil: str = "consumidor") -> Path:
         destino.mkdir(parents=True)
-        _preparar_repo(destino, "main", perfil=perfil)
+        _preparar_repo(destino, "main", perfil=perfil, config_extra={"api": {"moduleFile": MODULE_FILE}})
         return destino
 
     def _worktree(self, principal: Path, nombre: str) -> Path:
@@ -863,6 +957,16 @@ class ParidadCompuertaResolverTests(unittest.TestCase):
             "submodulo desde su raiz de trabajo": self._submodulo(base / "sm_base"),
         }
 
+
+class ParidadCompuertaResolverTests(_ReposDeJuguete, unittest.TestCase):
+    """#283: la regla "el padre del common-dir solo vale si se llama `.git`" vive dos veces:
+    en Python (`tg.resolver_config_path`) y en la compuerta shell del guard de hooks.json
+    (un hook shell no puede importar Python). Aca se atan: sobre los mismos repos de
+    juguete, "la compuerta abre" == "el resolvedor devuelve una ruta que existe", y el
+    "no se" de Python (None, motivo) == compuerta cerrada. Si una copia cambia, falla."""
+
+    ABREN = {"principal con config", "worktree sin .claude/", "subdirectorio de consumidor"}
+
     @staticmethod
     def _python_resuelve(cwd: Path) -> bool:
         previo = Path.cwd()
@@ -874,14 +978,6 @@ class ParidadCompuertaResolverTests(unittest.TestCase):
         finally:
             os.chdir(previo)
 
-    def _compuerta_abre(self, comando: str, cwd: Path) -> bool:
-        resultado = _correr_hook(comando, "gh pr merge 1", cwd, plugin_root=str(ROOT))
-        if resultado.returncode == 2:
-            self.assertIn("[timonel] Bloqueado", resultado.stderr)
-            return True
-        self.assertEqual(resultado.returncode, 0, f"stderr={resultado.stderr!r}")
-        return False
-
     @staticmethod
     def _shell_resuelve(cwd: Path) -> bool:
         """#282: la funcion `resolver_config_consumidor` de `_common.sh` (rc 0 y la ruta existe)."""
@@ -892,24 +988,135 @@ class ParidadCompuertaResolverTests(unittest.TestCase):
         # La ruta local es relativa: se evalua con el mismo cwd que la produjo.
         return resultado.returncode == 0 and (cwd / resultado.stdout.strip()).exists()
 
-    def _decisiones(self, comando: str) -> dict[str, tuple[bool, bool, bool]]:
+    def _decisiones(self, sonda) -> dict[str, tuple[bool, bool, bool]]:
         with tempfile.TemporaryDirectory() as tmp:
             casos = self._casos(Path(tmp).resolve())
             return {
-                nombre: (self._compuerta_abre(comando, cwd), self._python_resuelve(cwd), self._shell_resuelve(cwd))
+                nombre: (sonda(cwd), self._python_resuelve(cwd), self._shell_resuelve(cwd))
                 for nombre, cwd in casos.items()
             }
 
     def test_compuerta_y_resolver_deciden_igual(self):
-        for nombre, (abre, resuelve, shell) in self._decisiones(_comando_guard_integracion()).items():
-            with self.subTest(caso=nombre):
-                self.assertEqual(abre, resuelve, f"compuerta abre={abre}, resolver_config_path resuelve={resuelve}")
-                self.assertEqual(abre, shell, f"compuerta abre={abre}, resolver_config_consumidor resuelve={shell}")
+        for compuerta, (selector, sonda) in COMPUERTAS_QUE_RESUELVEN_CONFIG.items():
+            comando = selector()
+            for nombre, (abre, resuelve, shell) in self._decisiones(lambda cwd: sonda(comando, cwd)).items():
+                with self.subTest(compuerta=compuerta, caso=nombre):
+                    self.assertEqual(abre, resuelve, f"compuerta abre={abre}, resolver_config_path resuelve={resuelve}")
+                    self.assertEqual(abre, shell, f"compuerta abre={abre}, resolver_config_consumidor resuelve={shell}")
 
     def test_los_casos_cubren_abiertos_y_cerrados(self):
         """Sin esto, una compuerta siempre cerrada y un resolvedor siempre None "coincidirian"."""
-        abiertos = {n for n, (abre, *_) in self._decisiones(_comando_guard_integracion()).items() if abre}
-        self.assertEqual(abiertos, self.ABREN)
+        for compuerta, (selector, sonda) in COMPUERTAS_QUE_RESUELVEN_CONFIG.items():
+            comando = selector()
+            with self.subTest(compuerta=compuerta):
+                abiertos = {n for n, (abre, *_) in self._decisiones(lambda cwd: sonda(comando, cwd)).items() if abre}
+                self.assertEqual(abiertos, self.ABREN)
+
+    def test_onboard_avisa_solo_cuando_la_ausencia_del_config_es_un_no(self):
+        """l.12: rc 1 (checkout resuelto, sin config) conserva el aviso; rc 2 (bare, submodulo) es un
+        "no se" y calla; rc 0 calla. El aviso no sigue la polaridad de las otras compuertas."""
+        comando = _comando_onboard()
+        avisan = {"repo no consumidor", "worktree cuyo principal no tiene config"}
+        with tempfile.TemporaryDirectory() as tmp:
+            for nombre, cwd in self._casos(Path(tmp).resolve()).items():
+                with self.subTest(caso=nombre):
+                    resultado = _correr_con_payload(comando, {}, cwd, plugin_root=str(ROOT))
+                    self.assertEqual(resultado.returncode, 0, resultado.stderr)
+                    self.assertEqual(AVISO_FALTA_CONFIG in resultado.stdout, nombre in avisan, resultado.stdout)
+
+
+class CompuertasResuelvenConfigDesdeWorktreeTests(_ReposDeJuguete, unittest.TestCase):
+    """#281: las compuertas de hooks.json que leian `.claude/timonel.config.json` relativo al CWD
+    lo resuelven en el checkout principal con `resolver_config_consumidor`, como el guard de
+    integracion (`GuardResuelveConfigDesdeWorktreeTests`). Caja negra, repo + worktree de juguete."""
+
+    def _principal_y_worktree(self, base: Path, config_extra: dict, rama: str = "hu/281-x") -> tuple[Path, Path]:
+        principal = base / "principal"
+        principal.mkdir()
+        _preparar_repo(principal, "main", perfil="consumidor", config_extra=config_extra)
+        wt = base / "wt"
+        self._git(principal, "worktree", "add", "-q", "-b", rama, str(wt))
+        self.assertFalse((wt / ".claude").exists())
+        return principal, wt
+
+    def test_escenario_1_push_forzado_bloqueado_desde_el_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, wt = self._principal_y_worktree(Path(tmp).resolve(), {})
+            resultado = _correr_hook(_comando_push_force(), "git push --force origin hu/1-x", wt, plugin_root=str(ROOT))
+        self.assertEqual(resultado.returncode, 2, resultado.stderr)
+        self.assertIn("[timonel] Bloqueado: git push --force", resultado.stderr)
+
+    def test_escenario_1_base_branches_se_leen_del_config_principal(self):
+        """El worktree vive en `trunk`: solo bloquea el commit si `baseBranches` sale del config
+        del principal (con los defaults main/master/develop pasaria)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _, wt = self._principal_y_worktree(
+                Path(tmp).resolve(), {"git": {"baseBranches": ["trunk"]}}, rama="trunk"
+            )
+            resultado = _correr_hook(_comando_guard_commits_consumidor(), "git commit -m 'x #1'", wt, plugin_root=str(ROOT))
+        self.assertEqual(resultado.returncode, 2, resultado.stderr)
+        self.assertIn("commit directo en la rama base 'trunk'", resultado.stderr)
+
+    def test_escenario_2_aviso_de_archivo_raiz_desde_el_worktree(self):
+        comando = _comando_aviso_raiz()
+        with tempfile.TemporaryDirectory() as tmp:
+            _, wt = self._principal_y_worktree(Path(tmp).resolve(), {"api": {"moduleFile": MODULE_FILE}})
+            raiz = _correr_con_payload(comando, {"tool_input": {"file_path": str(wt / MODULE_FILE)}}, wt, str(ROOT))
+            otro = _correr_con_payload(comando, {"tool_input": {"file_path": str(wt / "apps/api/otro.ts")}}, wt, str(ROOT))
+        self.assertEqual(raiz.returncode, 0, raiz.stderr)
+        self.assertIn(AVISO_RAIZ, raiz.stdout)
+        self.assertIn(f"({MODULE_FILE})", raiz.stdout)
+        self.assertEqual(otro.stdout, "")
+
+    def test_escenario_2_aviso_de_archivo_raiz_con_cwd_por_symlink(self):
+        """El `file_path` llega con el PWD logico (bajo un symlink) mientras `git rev-parse
+        --show-toplevel` devuelve la ruta fisica: el aviso debe seguir saliendo."""
+        comando = _comando_aviso_raiz()
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            repo = base / "repo"
+            repo.mkdir()
+            _preparar_repo(repo, "main", perfil="consumidor", config_extra={"api": {"moduleFile": MODULE_FILE}})
+            enlace = base / "enlace"
+            enlace.symlink_to(repo)
+            payload = {"tool_input": {"file_path": f"{enlace}/{MODULE_FILE}"}}
+            resultado = _correr_con_payload(comando, payload, enlace, str(ROOT), env_extra={"PWD": str(enlace)})
+        self.assertEqual(resultado.returncode, 0, resultado.stderr)
+        self.assertIn(AVISO_RAIZ, resultado.stdout)
+        self.assertIn(f"({MODULE_FILE})", resultado.stdout)
+
+    def test_escenario_3_onboard_no_dice_que_falta_el_config_en_el_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, wt = self._principal_y_worktree(Path(tmp).resolve(), {})
+            resultado = _correr_con_payload(_comando_onboard(), {}, wt, str(ROOT))
+        self.assertEqual(resultado.returncode, 0, resultado.stderr)
+        self.assertEqual(resultado.stdout, "")
+
+    def test_escenario_3_version_no_sale_temprano_en_el_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, wt = self._principal_y_worktree(Path(tmp).resolve(), {})
+            self.assertTrue(_abre_version(_comando_version_release(), wt))
+
+    def test_escenario_4_compuertas_cerradas_salen_0_sin_avisar(self):
+        """Repo no consumidor, bare y submodulo: ninguna compuerta bloquea ni avisa. El onboard avisa
+        en el repo no consumidor (rc 1, como hoy) pero calla en bare y submodulo (rc 2, un "no se")."""
+        with tempfile.TemporaryDirectory() as tmp:
+            casos = self._casos(Path(tmp).resolve())
+            for nombre in ("repo no consumidor", "bare desde un subdirectorio", "submodulo desde su raiz de trabajo"):
+                cwd = casos[nombre]
+                for compuerta, (selector, sonda) in COMPUERTAS_QUE_RESUELVEN_CONFIG.items():
+                    with self.subTest(caso=nombre, compuerta=compuerta):
+                        self.assertFalse(sonda(selector(), cwd))
+                onboard = _correr_con_payload(_comando_onboard(), {}, cwd, str(ROOT))
+                with self.subTest(caso=nombre, compuerta="onboard"):
+                    self.assertEqual(onboard.returncode, 0, onboard.stderr)
+                    self.assertEqual(AVISO_FALTA_CONFIG in onboard.stdout, nombre == "repo no consumidor")
+
+    def test_la_regla_del_common_dir_solo_vive_en_common_sh(self):
+        """Ninguna compuerta de hooks.json repite la regla inline: la tiene `resolver_config_consumidor`."""
+        for comando in _todos_los_comandos():
+            with self.subTest(comando=comando[:60]):
+                self.assertNotIn("--git-common-dir", comando)
 
 
 class GuardCommitsResuelveRepoDestinoTests(unittest.TestCase):
