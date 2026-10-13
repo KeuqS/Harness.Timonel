@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.0 — en desarrollo
+
+- Las 5 compuertas de `hooks/hooks.json` (onboard, versión, aviso de archivo raíz, push forzado + commits en base y guard de integración) resuelven el config del consumidor con `resolver_config_consumidor` de `scripts/_common.sh`, de modo que un worktree sin `.claude/timonel.config.json` propio decide con el config del checkout principal; si la función no existe usan un fallback local con la misma regla. Tests nuevos: `CompuertasResuelvenConfigDesdeWorktreeTests` (7) y `ParidadCompuertaResolverTests` parametrizada por compuerta; verificación del plugin en verde con 466 tests (`verificar_plugin.py` PASSED). El falso positivo del push forzado queda en #316. (#281)
+
 ## 0.17.0 — 2026-10-13
 
 - `scripts/_common.sh` gana `resolver_config_consumidor`: desde un worktree sin `.claude/timonel.config.json` propio, `load_timonel_config` resuelve el config en el checkout principal (padre del common-dir solo si se llama `.git`, con `--path-format=absolute`), con config local ganando sin ejecutar git y `no sé: <motivo>` (nunca un "no existe" falso) en bare, submódulo o fuera de git; sourcear no exporta ni imprime. Tests nuevos: `tests/test_common_sh.py` (`LoadTimonelConfigTests` y `ResolverSinEfectosTests`, escenarios E1-E4) y la decisión shell sumada a `ParidadCompuertaResolverTests`; verificación del plugin en verde con 458 tests (`verificar_plugin.py` PASSED). (#282)
