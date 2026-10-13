@@ -58,6 +58,7 @@ El contra-hecho no es un bug que ocurrió, sino uno que **no** ocurrió: el esta
 - **Cuando la semántica es parecida pero no la misma**: dos sensores pueden contar "eventos" con anclas legítimamente distintas. Importar lo equivocado es peor que reimplementar, porque el acoplamiento hace creer que están alineados. Si diferís, diferí explícito y documentá en qué.
 - **Cuando importar crea un ciclo o arrastra dependencias pesadas** (`gh`, red, credenciales) a un sensor que debía ser puro: ahí extraé la función pura del original y que los dos la importen, en vez de importar el módulo entero.
 - **Cuando el "cálculo" son tres líneas sin ninguna decisión adentro** (un `len`, un `sorted`): el acoplamiento cuesta más que la copia. Lo que justifica importar es el **aprendizaje incorporado**, no la cantidad de líneas.
+- **Cuando la copia es inevitable** (un hook shell no puede importar Python): queda atada por un test de paridad y el CHANGELOG nombra ambas ubicaciones. Sin ese test, si una copia cambia la otra deriva en silencio: lo señaló el warning 3 del review de #210 (la regla "el padre del common-dir solo vale si se llama `.git`" escrita en `timonel_gh.resolver_config_path` y en la compuerta shell de `hooks/hooks.json`), y `ParidadCompuertaResolverTests` (#283) la ata comparando ambas decisiones sobre los mismos repos de juguete.
 - **Fuera del harness**: entre dominios de negocio distintos, compartir un cálculo porque "se parece" es el camino a la abstracción prematura.
 
 ## Relación con otras heurísticas
