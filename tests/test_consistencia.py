@@ -1840,5 +1840,32 @@ class ArgumentosDeArgparseLeidosTests(unittest.TestCase):
         self.assertIn("pr_check.py", con_argparse)
 
 
+class VacuoConLineaBaseTests(unittest.TestCase):
+    """code-review §3.5 e implement-plugin-change leen `base: B de M` con la misma regla (#288)."""
+
+    CODE_REVIEW = ROOT / "skills" / "code-review" / "SKILL.md"
+    IMPLEMENTADOR = ROOT / "skills" / "implement-plugin-change" / "SKILL.md"
+
+    def _seccion_3_5(self):
+        texto = self.CODE_REVIEW.read_text(encoding="utf-8")
+        inicio = texto.index("### 3.5")
+        fin = texto.index("\n### ", inicio + 1)
+        return texto[inicio:fin]
+
+    def test_code_review(self):
+        seccion = self._seccion_3_5()
+        self.assertIn("base:", seccion)
+        self.assertIn("N <= B", seccion)
+        self.assertLess(seccion.index("base:"), seccion.index("N <= B"))
+
+    def test_code_review_sin_linea_base_sigue_valiendo_n_cero(self):
+        self.assertIn("N=0", self._seccion_3_5())
+
+    def test_misma_regla_en_ambos(self):
+        for archivo in (self.CODE_REVIEW, self.IMPLEMENTADOR):
+            with self.subTest(archivo=archivo.parent.name):
+                self.assertIn("N <= B", archivo.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

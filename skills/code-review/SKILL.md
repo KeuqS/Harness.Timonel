@@ -59,7 +59,7 @@ Aplica **todas** las heuristicas que el glob del Paso 1 trajo a disco (`general/
 ### 3.5 Tests (`Tests`)
 `.spec.ts` para codigo nuevo; cubren los Gherkin; usa `TESTS_RESULTADO` de consolidacion (no re-ejecutes salvo duda). Faltantes no directos de Gherkin → WARNING; directos → CRITICO con tipo `Gherkin`.
 
-Con `tests_primera_corrida` informado: `No medido: <motivo>` → WARNING "evidencia faltante: tests no vistos fallar", nunca lo cuentes como verificado; una linea sin mutacion o sin conteo `fallos: N de M` → WARNING; una con N=0 es un test vacuo → WARNING. Ausente el parametro, no lo infieras: es "no informado".
+Con `tests_primera_corrida` informado: `No medido: <motivo>` → WARNING "evidencia faltante: tests no vistos fallar", nunca lo cuentes como verificado; una linea sin mutacion o sin conteo `fallos: N de M` → WARNING; una con N=0 es un test vacuo → WARNING. Si la linea de `mutar_literal.py` trae `base: B de M` con B > 0 (la suite ya fallaba sin mutar), la evidencia es `N > B`: con `N <= B` el test es vacuo → WARNING; sin linea `base:` sigue valiendo N=0. Es la misma regla que aplica `implement-plugin-change`. Ausente el parametro, no lo infieras: es "no informado".
 
 ### 3.6 Retro previa
 Si un error recurrente documentado se repite, registralo (WARNING salvo que viole un Gherkin).
