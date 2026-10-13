@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.0 — en desarrollo
+
+- `scripts/mutar_literal.py` corre unittest en la copia con `<copia>/tests` delante del `PYTHONPATH` del llamador (que se conserva), de modo que `--test tests.test_sensores.*` ya no sale `no sé: objetivo de test no encontrado` por los imports de módulos hermanos; el docstring avisa que borrar una llamada completa con paréntesis deja un error de sintaxis (`no sé`) y que hay que mutar el argumento o la condición. Tests nuevos: `PythonpathDeLaCopiaTests` (3) y `DocstringAvisaBorrarLlamadaTests` (1); 422 en verde (#286)
+
 ## 0.14.0 — 2026-10-13
 
 - `agents/flechodiezx-hotfix.md` acepta el modo "rama del usuario": con una rama y un worktree propios pedidos por el usuario, pasa `directorio_trabajo: <ruta>` al review (Fase 3) y a la Fase 6, y el camino normal (`isolation: worktree`, rama `fix/<N>-<slug>`) queda intacto. Tests: `ModoRamaDelUsuarioHotfixTests` con 9 casos en `tests/test_consistencia.py`; 411 en verde (#268)
