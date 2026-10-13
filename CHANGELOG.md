@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.18.0 — en desarrollo
+## 0.18.0 — 2026-10-13
 
 - Las 5 compuertas de `hooks/hooks.json` (onboard, versión, aviso de archivo raíz, push forzado + commits en base y guard de integración) resuelven el config del consumidor con `resolver_config_consumidor` de `scripts/_common.sh`, de modo que un worktree sin `.claude/timonel.config.json` propio decide con el config del checkout principal; si la función no existe usan un fallback local con la misma regla. Tests nuevos: `CompuertasResuelvenConfigDesdeWorktreeTests` (8) y `ParidadCompuertaResolverTests` parametrizada por compuerta; verificación del plugin en verde con 467 tests (`verificar_plugin.py` PASSED). El falso positivo del push forzado queda en #316. (#281)
 
