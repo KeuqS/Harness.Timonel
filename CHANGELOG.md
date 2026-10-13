@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.0 — en desarrollo
+
+- `agents/flechodiezx-hotfix.md` acepta el modo "rama del usuario": con una rama y un worktree propios pedidos por el usuario, pasa `directorio_trabajo: <ruta>` al review (Fase 3) y a la Fase 6, y el camino normal (`isolation: worktree`, rama `fix/<N>-<slug>`) queda intacto. Tests: `ModoRamaDelUsuarioHotfixTests` con 8 casos en `tests/test_consistencia.py`; 410 en verde (#268)
+
 ## 0.13.0 — 2026-10-09
 
 - `scripts/mutar_literal.py` ancla `--a` por igualdad de línea completa (`## N` ya no toma `## Nueva`, el pase falso de #263) y exige un encabezado `#+ ` (`destino_no_es_encabezado`); `OSError`, `shutil.Error` y `UnicodeDecodeError` al copiar o leer salen 2 con `no sé: <motivo>` (`copia_o_lectura_imposible`), nunca exit 1 con traceback; se conserva el guard `if nuevo == texto` (alcanzable cuando el literal es el encabezado final que sigue al destino) con un test puro y uno de subproceso que solo él hace pasar; `IgnorarCopiaTests` ve fallar cada exclusión de `_ignorar` (una mutación por exclusión, 1 fallo cada una); 9 tests nuevos en `tests/test_mutar_literal.py` (40); 388 en verde (#272)
