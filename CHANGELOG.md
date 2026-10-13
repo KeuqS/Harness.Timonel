@@ -2,7 +2,7 @@
 
 ## 0.14.0 — en desarrollo
 
-- `scripts/mutar_literal.py` corre la suite una vez sobre el archivo sin mutar antes de mutar (corrida base) y la reporta como `base: B de M` tras `fallos: N de M`; si la base no corre o agota el tiempo sale 2 con el motivo `base_inconsistente` (no sé) en vez de atribuir a la mutación fallos que ya existían, y `implement-plugin-change` exige N > B. Tests nuevos: `LineaBaseTests` + 5 filas en `MainEnProcesoTests`; suite 409 OK (#273)
+- `scripts/mutar_literal.py` corre la suite una vez sobre el archivo sin mutar antes de mutar (corrida base) y la reporta como `base: B de M` tras `fallos: N de M`; una base sin `Ran M tests` o con timeout sale 2 con los motivos existentes (`salida_no_parseable`, `timeout`) y un `Ran M` distinto entre la base y la mutada sale 2 con el motivo nuevo `base_inconsistente` (no sé), sin imprimir `fallos:`; así no se atribuyen a la mutación fallos que ya existían, y `implement-plugin-change` exige N > B. Tests nuevos: `LineaBaseTests` + 5 filas en `MainEnProcesoTests`; suite 409 OK (#273)
 
 ## 0.13.0 — 2026-10-09
 
