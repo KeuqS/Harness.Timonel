@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.0 — en desarrollo
+
+- `scripts/mutar_literal.py` corre la suite una vez sobre el archivo sin mutar antes de mutar (corrida base) y la reporta como `base: B de M` tras `fallos: N de M`; una base sin `Ran M tests` o con timeout sale 2 con los motivos existentes (`salida_no_parseable`, `timeout`) y un `Ran M` distinto entre la base y la mutada sale 2 con el motivo nuevo `base_inconsistente` (no sé), sin imprimir `fallos:`; así no se atribuyen a la mutación fallos que ya existían, y `implement-plugin-change` exige N > B. Tests nuevos: `LineaBaseTests` + 5 filas en `MainEnProcesoTests`; suite 409 OK (#273)
+
 ## 0.13.0 — 2026-10-09
 
 - `scripts/mutar_literal.py` ancla `--a` por igualdad de línea completa (`## N` ya no toma `## Nueva`, el pase falso de #263) y exige un encabezado `#+ ` (`destino_no_es_encabezado`); `OSError`, `shutil.Error` y `UnicodeDecodeError` al copiar o leer salen 2 con `no sé: <motivo>` (`copia_o_lectura_imposible`), nunca exit 1 con traceback; se conserva el guard `if nuevo == texto` (alcanzable cuando el literal es el encabezado final que sigue al destino) con un test puro y uno de subproceso que solo él hace pasar; `IgnorarCopiaTests` ve fallar cada exclusión de `_ignorar` (una mutación por exclusión, 1 fallo cada una); 9 tests nuevos en `tests/test_mutar_literal.py` (40); 388 en verde (#272)
