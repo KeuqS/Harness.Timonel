@@ -460,7 +460,7 @@ class DocstringAvisaBorrarLlamadaTests(unittest.TestCase):
         doc = ml.__doc__
         self.assertIn("paréntesis", doc)
         self.assertIn("sintaxis", doc)
-        self.assertIn("argumento", doc)
+        self.assertIn("mutar el argumento", doc)
 
 
 class EscenarioRealContraElRepoTests(unittest.TestCase):
