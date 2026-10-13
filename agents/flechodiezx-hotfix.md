@@ -60,6 +60,8 @@ HISTORIA: {body del issue}
 RESTRICCIONES: trabajas en un worktree aislado, propio de este hotfix, sobre `fix/N-<slug>`. NO introduzcas endpoints, modelos compartidos, providers ni rutas nuevos; si lo necesitas, aborta e informa (no es hotfix). Commit final "fix(<modulo>): #N <descripcion>". NO ejecutes nx test. Tu Output cierra con el bloque `### Tests verdes en su primera corrida`, tal como lo pide tu skill. Informa en tu output el nombre exacto de la rama de tu worktree: la necesito para consolidar.
 ```
 
+**Modo rama del usuario (Fase 2)**: si el usuario pidio una rama y la ruta de un worktree concretos (por ejemplo la rama `poc/mcp-apps` en `../Repo-poc`), este modo reemplaza el lanzamiento y la consolidacion de arriba: no crees `fix/N-<slug>` ni cambies la rama de tu propio arbol — nunca `git checkout` ni `git worktree add` en el arbol del orquestador. Antes de seguir, aplica las guardas: si la rama pedida es la rama base declarada, `main` o `master`, **detente** y reportalo (el hook bloquearia el commit igual); si la ruta no existe, o `git -C <ruta> branch --show-current` no devuelve esa rama (o el comando falla: es un "no se", no un "si"), **detente** y reportalo. Registra `rama`, `ruta`, `base` y `pr_draft_intencional` (`si` | `no`) y, si es `si`, pon el label `draft-intencional` en el issue (`gh issue edit N -R "$REPO" --add-label draft-intencional`); anuncialos en un comentario simple del issue (sin marcador nuevo). Lanza **un** sub-agente `model: "sonnet"` con el mismo skill de implementacion de arriba, sin `isolation`, con la `ruta` como directorio de trabajo (el prompt le ordena correr todo ahi) y sin `RAMA_HISTORIA`: el trabajo ya vive en la rama del usuario. Al terminar, verifica el producto con tres respuestas: `git -C <ruta> rev-list --count <base>..<rama>`; mas de 0 sigue, `0` se detiene y reporta que el sub-agente no commiteo, y un comando que falla es "no se" y se detiene (base o rama inexistentes), nunca se trata como `0` ni como un pase. En el modo no hay merge de la rama del sub-agente ni limpieza de su arbol: no hay worktree del harness que consolidar. El lint y los tests de abajo corren con `<ruta>` como directorio de trabajo. Sin ese pedido del usuario, esta fase es la de arriba, sin cambios.
+
 Full-stack (raro): dos sub-agentes **secuenciales**, backend primero, cada uno en su propio worktree.
 
 Con el sub-agente terminado, valida que su Output traiga el bloque `### Tests verdes en su primera corrida` con exactamente una de tres formas: una linea por test con su mutacion y `fallos: N de M`; `Ninguno`; o `No medido: <motivo>`. Si falta, o una linea no trae mutacion o conteo, registralo como pendiente y relanza al sub-agente **una vez** pidiendo el bloque; si vuelve sin el, reportalo al usuario y no consolides. Guarda el bloque tal cual como `tests_primera_corrida` para la Fase 3.
@@ -87,6 +89,10 @@ Sub-agente `model: "sonnet"`, dentro de la rama `fix/N-<slug>` (ya consolidada t
 
 **Ronda de correccion**: si decidis relanzar el sub-agente de implementacion para cerrar hallazgos `CRITICO` del review antes de seguir a la Fase 4, la misma precondicion que en `flechodiezx`: push, verificar, recien entonces pasar la variable. `git push -u origin fix/N-<slug>`, despues `git rev-list --left-right --count fix/N-<slug>...origin/fix/N-<slug>`, y **solo si el resultado es `0 0`** agregas `RAMA_HISTORIA: fix/N-<slug>` al prompt del sub-agente y lo lanzas. Si el conteo no es `0 0`, no pasas la variable y no lo lanzas: reportalo. El camino normal de la Fase 2 (hotfix nuevo, sin reanudacion) no cambia: sigue sin pushear y sin pasar `RAMA_HISTORIA` (#194).
 
+**Modo rama del usuario (Fase 3, review)**: lanza `code-review` con `directorio_trabajo: <ruta>` para que el reviewer lea el diff de la rama del usuario, `<base>...<rama>`, y no el `HEAD` del arbol del orquestador.
+
+**Modo rama del usuario (Fase 3, ronda de correccion)**: el sub-agente de implementacion (el mismo skill de implementacion de la Fase 2) va sin `isolation` y sin `RAMA_HISTORIA`, con la `ruta` del usuario como directorio de trabajo; antes de lanzarlo corre `git -C <ruta> push -u origin <rama>` y mide `git -C <ruta> rev-list --left-right --count <rama>...origin/<rama>`: solo si da `0 0` lo lanzas, y si no lo da o el comando falla, no lo lances y reportalo.
+
 ## Fase 4: Retro opcional
 
 Solo si el SP real difiere del estimado, el fix revelo un problema sistemico, o el review marco warnings repetidos. Usa `generate-retro` con los mismos parametros que `flechodiezx`. Si la saltas, dilo en el resumen final.
@@ -106,11 +112,15 @@ Con el code review publicado (Fase 3) y la retro decidida (Fase 4), la rama `fix
 
 El merge a la rama base lo hace siempre un humano al aprobar el PR: esta fase termina al abrirlo.
 
+**Modo rama del usuario (Fase 5)**: los pasos 1 y 2 usan la rama del usuario, no `fix/N-<slug>`: `git -C <ruta> push -u origin <rama>` e `integracion.py N --rama <rama del usuario> --base <base declarada> --repo "$REPO" --body-out /tmp/pr-N.md`, agregando `--draft` solo si `pr_draft_intencional: si` (el comando impreso es `gh pr create --draft ...`); sin draft intencional, el PR es normal. El comentario del paso 4 dice `(rama <rama> → <base declarada>)`.
+
 ## Fase 6: DoD reducido
 
 Sub-agente `"$PLUGIN_ROOT/skills/verify-dod/SKILL.md"` con `providers_registrados: n-a`, `rutas_registradas: n-a`, `retro_generada: {si|no}`, `tareas_completas`, `veredicto_code_review`, `perfil` (`consumidor` por defecto; `plugin` si el hotfix es sobre el propio plugin). Items tipicamente `SKIPPED`: 3, 5, 6, 7. Criticos: 1, 2, 4, 8, 11 (y 9 en perfil plugin). `NO_GENERADO`/`SKIPPED` en la fila 11 = `FALLAS_CRITICAS` (no se cierra el issue: el code review es obligatorio). Publica `<!-- timonel:dod -->`.
 
 Si la decision es `DONE`: marca `- [x] Definition of Done`, presenta al usuario la tabla del DoD y el link al PR abierto en la Fase 5, reporta "PR abierto, pendiente de merge humano" y **termina**. Ninguna fase de este agente cierra el issue: eso lo resuelve GitHub cuando el humano aprueba y mergea el PR (la keyword de cierre ya va armada en el cuerpo por `integracion.py`).
+
+**Modo rama del usuario (Fase 6)**: lanza `verify-dod` con `directorio_trabajo: <ruta>`, para que `pr_check.py` y los `git diff` corran en la rama del usuario y no en la de tu arbol. Con `pr_draft_intencional: si` y todo lo demas sano, la decision esperada es `PENDIENTES` (el draft es un pendiente no critico): el issue **no** vuelve a `estado:en-progreso` y queda en `estado:en-revision`; presenta al usuario la tabla del DoD y el link al PR y **termina**, como con `DONE`. Con `FALLAS_CRITICAS`, la regla de arriba no cambia.
 
 Si la decision no es `DONE`, revierte el label a `estado:en-progreso` (la Fase 5 ya lo habia dejado en `estado:en-revision`) y muestra las fallas.
 

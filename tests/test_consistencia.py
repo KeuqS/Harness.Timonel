@@ -1057,6 +1057,111 @@ class ModoRamaDelUsuarioTests(unittest.TestCase):
                 self.assertNotIn(frase, parrafo, f"{titulo}: no digas `{frase}`")
 
 
+class ModoRamaDelUsuarioHotfixTests(unittest.TestCase):
+    """Modo "rama del usuario" en `agents/flechodiezx-hotfix.md` (#268): replica los parrafos
+    de `ModoRamaDelUsuarioTests` (#221, #245) para el hotfix, un caso por fase y por
+    **parrafo** (reusa `_seccion`/`_parrafos` de `SincronizacionDelWorktreeTests` y el
+    molde de `ModoRamaDelUsuarioTests`, sin reimplementarlos). Cada caso busca SU parrafo
+    por marcador y exige exactamente uno.
+
+    Escenario 5: borrar en una copia todas las apariciones del literal
+    `directorio_trabajo: <ruta>` del hotfix hace fallar exactamente `test_fase_3_review` y
+    `test_fase_6`; por eso los parrafos de la Fase 2 y de la ronda de correccion dicen "la
+    `ruta` como directorio de trabajo" y nunca ese literal.
+
+    D9: los parrafos del modo no nombran ningun `implement-*`, no contienen el literal de
+    isolation (dicen "sin `isolation`") ni las frases de `WorktreeDeImplementacionTests`."""
+
+    MARCADOR = ModoRamaDelUsuarioTests.MARCADOR
+    PARRAFO = staticmethod(SincronizacionDelWorktreeTests._parrafos)
+    SECCION = staticmethod(SincronizacionDelWorktreeTests._seccion)
+    FASE_2 = "## Fase 2: Implementacion"
+    FASE_3 = "## Fase 3: Code review"
+    FASE_5 = "## Fase 5: PR/Integracion"
+    FASE_6 = "## Fase 6: DoD reducido"
+
+    @staticmethod
+    def _hotfix() -> str:
+        return (ROOT / "agents/flechodiezx-hotfix.md").read_text(encoding="utf-8")
+
+    def _parrafo_del_modo(self, titulo_seccion: str, marcador: str) -> str:
+        seccion = self.SECCION(self._hotfix(), titulo_seccion)
+        self.assertTrue(seccion, f"agents/flechodiezx-hotfix.md no tiene la seccion `{titulo_seccion}`")
+        encontrados = [p for p in self.PARRAFO(seccion) if p.lstrip().startswith(marcador)]
+        self.assertEqual(
+            len(encontrados), 1,
+            f"`{titulo_seccion}` debe tener exactamente un parrafo que empieza con `{marcador}` "
+            f"(hay {len(encontrados)}): el modo rama del usuario de esa fase no esta documentado",
+        )
+        return encontrados[0]
+
+    def _exige(self, parrafo: str, literales: tuple[str, ...], donde: str) -> None:
+        for literal in literales:
+            self.assertIn(literal, parrafo, f"{donde}: el parrafo del modo usuario debe contener `{literal}`")
+
+    def test_fase_2(self):
+        parrafo = self._parrafo_del_modo(self.FASE_2, f"{self.MARCADOR} (Fase 2)**")
+        self._exige(parrafo, (
+            "no crees `fix/N-<slug>`", "ni cambies la rama de tu propio arbol",
+            "sin `isolation`", "sin `RAMA_HISTORIA`", "la `ruta` como directorio de trabajo",
+            "`main` o `master`", "**detente**", "git -C <ruta> branch --show-current", '"no se"',
+            "`rama`, `ruta`, `base` y `pr_draft_intencional`", "--add-label draft-intencional",
+        ), "Fase 2")
+
+    def test_fase_2_producto(self):
+        parrafo = self._parrafo_del_modo(self.FASE_2, f"{self.MARCADOR} (Fase 2)**")
+        self._exige(parrafo, (
+            "git -C <ruta> rev-list --count <base>..<rama>",
+            "mas de 0 sigue", "`0` se detiene", 'comando que falla es "no se" y se detiene',
+        ), "Fase 2, producto")
+        for prohibido in ("git worktree remove", "git merge <rama_worktree>"):
+            self.assertNotIn(prohibido, parrafo, f"Fase 2: en el modo no hay `{prohibido}`")
+
+    def test_fase_3_review(self):
+        parrafo = self._parrafo_del_modo(self.FASE_3, f"{self.MARCADOR} (Fase 3, review)**")
+        self._exige(parrafo, ("`code-review`", "`directorio_trabajo: <ruta>`", "<base>...<rama>"), "Fase 3, review")
+
+    def test_fase_3_ronda(self):
+        parrafo = self._parrafo_del_modo(self.FASE_3, f"{self.MARCADOR} (Fase 3, ronda de correccion)**")
+        self._exige(parrafo, (
+            "sin `isolation`", "sin `RAMA_HISTORIA`", "la `ruta` del usuario como directorio de trabajo",
+            "git -C <ruta> push -u origin <rama>",
+            "git -C <ruta> rev-list --left-right --count <rama>...origin/<rama>", "`0 0`",
+        ), "Fase 3, ronda de correccion")
+
+    def test_fase_5(self):
+        parrafo = self._parrafo_del_modo(self.FASE_5, f"{self.MARCADOR} (Fase 5)**")
+        self._exige(parrafo, (
+            "git -C <ruta> push -u origin <rama>", "--rama <rama del usuario>", "--base <base declarada>",
+            "`--draft` solo si `pr_draft_intencional: si`", "gh pr create --draft", "(rama <rama> → <base declarada>)",
+        ), "Fase 5")
+
+    def test_fase_6(self):
+        parrafo = self._parrafo_del_modo(self.FASE_6, f"{self.MARCADOR} (Fase 6)**")
+        self._exige(parrafo, (
+            "`directorio_trabajo: <ruta>`", "`PENDIENTES`", "**no** vuelve a `estado:en-progreso`",
+            "`estado:en-revision`", "presenta al usuario la tabla del DoD y el link al PR", "**termina**",
+        ), "Fase 6")
+
+    def test_d9_los_parrafos_del_modo_no_tocan_la_asercion_de_aislamiento(self):
+        parrafos = [p for p in self.PARRAFO(self._hotfix()) if p.lstrip().startswith(self.MARCADOR)]
+        self.assertTrue(parrafos, "no hay ningun parrafo del modo rama del usuario: la regla seria vacua")
+        skills = sorted(p.parent.name for p in (ROOT / "skills").glob("implement-*/SKILL.md"))
+        self.assertTrue(skills, "glob de skills implement-* vacio: la regla seria vacua")
+        for parrafo in parrafos:
+            titulo = parrafo.splitlines()[0][:60]
+            self.assertNotIn("isolation: worktree", parrafo, f"{titulo}: no repitas el literal de isolation (D9)")
+            for skill in skills:
+                self.assertNotIn(skill, parrafo, f"{titulo}: no nombres `{skill}` (D9)")
+            for frase in WorktreeDeImplementacionTests.FRASES_PROHIBIDAS:
+                self.assertNotIn(frase, parrafo, f"{titulo}: no digas `{frase}`")
+
+    def test_camino_normal_intacto(self):
+        seccion = self.SECCION(self._hotfix(), self.FASE_2)
+        fuera = "\n\n".join(p for p in self.PARRAFO(seccion) if not p.lstrip().startswith(self.MARCADOR))
+        self._exige(fuera, ("isolation: worktree", "fix/N-<slug>"), "Fase 2 (camino normal, fuera de los parrafos del modo)")
+
+
 class DodEstrictoTests(unittest.TestCase):
     """DoD estricto (gap 3 de la auditoria #24, issue #28): sin autoevaluacion sin evaluador."""
 
