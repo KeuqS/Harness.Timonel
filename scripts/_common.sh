@@ -95,6 +95,8 @@ load_timonel_config() {
 #         submodulo). stderr: `no se pudo resolver el checkout principal: <motivo>`.
 # Sin efectos: solo variables locales. `--path-format=absolute` evita que git
 # devuelva `.git` en la raiz del checkout y `../.git` en un subdirectorio.
+# Sin timeout: a diferencia de timonel_gh._git_common_dir (5 s), bash no tiene
+# uno portable (macOS no trae `timeout`); `git rev-parse` es local y no bloquea.
 resolver_config_consumidor() {
     local local_cfg="${1:-.claude/timonel.config.json}"
     local common principal

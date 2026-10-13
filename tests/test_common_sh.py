@@ -138,22 +138,28 @@ class LoadTimonelConfigTests(_Base):
         self.assertFalse(marca.exists(), "la rama plugin va antes que git")
 
 
+# Variables que bash crea o reescribe por su cuenta entre dos comandos (no por `source`).
+DINAMICAS_DE_BASH = frozenset({"_", "PIPESTATUS", "BASH_REMATCH", "COLUMNS", "LINES"})
+
+
 class ResolverSinEfectosTests(_Base):
     def test_e4_sourcear_no_exporta_ni_imprime(self):
+        # Se comparan nombres (`compgen -v`), no `declare -p`: los valores de BASH_ARGC,
+        # SHLVL y similares cambian segun la version de bash (fallo del CI de #315), y
+        # bash 3.2 imprime los globales como `YY=1` sin prefijo `declare` (WARNING 1 del
+        # review de #282). Un global nuevo agrega un nombre; un export, una linea de env.
         script = (
-            f'declare -p > "{self.base}/antes.txt"; env > "{self.base}/env_antes.txt"; '
+            f'compgen -v > "{self.base}/antes.txt"; env > "{self.base}/env_antes.txt"; '
             f'source "{COMMON}"; '
-            f'declare -p > "{self.base}/despues.txt"; env > "{self.base}/env_despues.txt"; '
+            f'compgen -v > "{self.base}/despues.txt"; env > "{self.base}/env_despues.txt"; '
             "declare -F resolver_config_consumidor >/dev/null"
         )
         r = subprocess.run(["env", "-i", "bash", "-c", script], capture_output=True, text=True, cwd=self.base)
         self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
 
         def leer(nombre: str) -> list[str]:
-            return sorted(
-                linea for linea in (self.base / nombre).read_text(encoding="utf-8").splitlines()
-                if not linea.startswith(("_=", "declare -- _=")) and (nombre.startswith("env") or linea.startswith("declare "))
-            )
+            lineas = (self.base / nombre).read_text(encoding="utf-8").splitlines()
+            return sorted(linea for linea in lineas if linea not in DINAMICAS_DE_BASH and not linea.startswith("_="))
 
         self.assertEqual(leer("antes.txt"), leer("despues.txt"))
         self.assertEqual(leer("env_antes.txt"), leer("env_despues.txt"))
