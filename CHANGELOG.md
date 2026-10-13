@@ -3,6 +3,7 @@
 ## 0.14.0 — en desarrollo
 
 - `agents/flechodiezx-hotfix.md` acepta el modo "rama del usuario": con una rama y un worktree propios pedidos por el usuario, pasa `directorio_trabajo: <ruta>` al review (Fase 3) y a la Fase 6, y el camino normal (`isolation: worktree`, rama `fix/<N>-<slug>`) queda intacto. Tests: `ModoRamaDelUsuarioHotfixTests` con 9 casos en `tests/test_consistencia.py`; 411 en verde (#268)
+- `scripts/mutar_literal.py` corre la suite una vez sobre el archivo sin mutar antes de mutar (corrida base) y la reporta como `base: B de M` tras `fallos: N de M`; una base sin `Ran M tests` o con timeout sale 2 con los motivos existentes (`salida_no_parseable`, `timeout`) y un `Ran M` distinto entre la base y la mutada sale 2 con el motivo nuevo `base_inconsistente` (no sé), sin imprimir `fallos:`; así no se atribuyen a la mutación fallos que ya existían, y `implement-plugin-change` exige N > B. Tests nuevos: `LineaBaseTests` + 5 filas en `MainEnProcesoTests`; suite 409 OK (#273)
 
 ## 0.13.0 — 2026-10-09
 
