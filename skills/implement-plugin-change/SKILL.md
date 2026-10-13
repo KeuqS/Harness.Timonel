@@ -31,13 +31,13 @@ Recibes del orquestador: `issue`, el body del issue, el **contrato de cambio** (
 1. Lee `CLAUDE.md` del plugin, el contrato de cambio y los "Archivos de referencia" de la investigacion. No explores fuera de ellos.
 2. **TDD**: si el cambio toca `scripts/*.py`, escribe primero el test en `tests/` (unittest, sin `gh` real: funciones puras sobre dicts, y ademas un test por fila del cableado de `main()` que ejercite `main()` o la funcion que lo cablea, con `--json` o con `subprocess.run` parcheado: la funcion pura sola deja sin evidencia el tramo que decide el "no sé") y velo fallar; si toca agentes/skills/commands/hooks, `tests/test_consistencia.py` es tu red: agrega ahi la regla nueva si el cambio introduce una invariante (p. ej. "todo agente X invoca Y").
 3. Implementa. Para `hooks/hooks.json`, prueba el hook con entradas simuladas (`echo '{"tool_input":{...}}' | bash -c "$(jq -r '.hooks...command' hooks/hooks.json)"`) y deja el caso en el output.
-4. Verifica localmente:
+4. Verifica localmente con una sola orden, que corre unittest, `bash -n` y `jq` y termina en una linea:
    ```bash
-   python3 -m unittest discover -s tests
-   bash -n scripts/*.sh .githooks/*
-   jq . .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json >/dev/null
+   python3 scripts/verificar_plugin.py
    ```
-   Maximo 2 intentos de correccion; si persiste, detente y reporta el error exacto.
+   - **exit 0** (`PASSED`): verificado.
+   - **exit 1** (`FAILED: <paso>`): corrige. Maximo 2 intentos de correccion; si persiste, detente y reporta el error exacto.
+   - **exit 2** (`no sé: <motivo>`): **nunca se reporta como pasado**. Si el entorno bloquea `bash -n` o `jq` (o cualquier paso queda sin evidencia), copia el motivo tal cual al Output como **pendiente obligatorio de la consolidacion**; no lo des por verde ni lo reintentes en bucle.
 5. Commit: `git add <archivos del contrato> && git commit -m "<tipo>: <que> (#<issue>)"`.
 
 ## Output (obligatorio)
@@ -50,6 +50,7 @@ Recibes del orquestador: `issue`, el body del issue, el **contrato de cambio** (
 - **Rama exacta y ruta de tu worktree** (`git branch --show-current` y `pwd`): el orquestador los necesita para consolidar
 - Hash del commit
 - Si la verificacion fallo: error exacto y lo intentado
+- `Verificación: PASSED \| FAILED: <paso> \| no sé: <motivo>` — la linea final de `scripts/verificar_plugin.py` (un "no sé" es un pendiente obligatorio de la consolidacion, nunca un pasado)
 - `### Tests verdes en su primera corrida` — exactamente una de tres formas (nunca vacio ni en prosa libre):
   - una linea por test que paso en su primera corrida: `` - `<test>` — mutación: <qué se cambió> — fallos: N de M `` (N≥1; si N=0 el test es vacuo: reportalo como tal, no lo cuentes como evidencia). Si `mutar_literal.py` reporta `base: B de M` con B > 0 (la suite ya falla sin mutar), la evidencia de cobertura es `N > B`, no `N > 0`: con `N <= B` el test es vacuo;
   - `Ninguno`: corriste tests y ninguno nacio verde;
