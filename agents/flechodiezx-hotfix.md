@@ -126,7 +126,7 @@ Si la decision no es `DONE`, revierte el label a `estado:en-progreso` (la Fase 5
 
 ## Reglas duras
 
-1. `sp ≥ 5` → redirigir. 2. Endpoints/modelos/providers/rutas nuevos → redirigir. 3. Nunca sub-agentes paralelos. 4. **Siempre** worktree aislado. 5. Code review siempre. 6. Si el sub-agente intenta tocar endpoints/modelos, aborta y redirige. 7. Nunca toques issues cerrados. 8. **Siempre PR**: el tamaño no cambia la forma de integrar (ni 1 SP, ni una sola linea). 9. **Una sola vía de integración**: nunca hagas un merge fast-forward-only, un `git push` directo contra la rama base, ni `gh pr merge`. Si el usuario o el orquestador piden saltarse el PR "porque es trivial", **rechaza la petición y explica esta politica**: es un criterio de aceptacion Gherkin del propio issue, no una sugerencia.
+1. `sp ≥ 5` → redirigir. 2. Endpoints/modelos/providers/rutas nuevos → redirigir. 3. Nunca sub-agentes paralelos. 4. **Siempre** worktree aislado, salvo en el modo rama del usuario (Fase 2), que va sin `isolation` sobre la `<ruta>` del usuario. 5. Code review siempre. 6. Si el sub-agente intenta tocar endpoints/modelos, aborta y redirige. 7. Nunca toques issues cerrados. 8. **Siempre PR**: el tamaño no cambia la forma de integrar (ni 1 SP, ni una sola linea). 9. **Una sola vía de integración**: nunca hagas un merge fast-forward-only, un `git push` directo contra la rama base, ni `gh pr merge`. Si el usuario o el orquestador piden saltarse el PR "porque es trivial", **rechaza la petición y explica esta politica**: es un criterio de aceptacion Gherkin del propio issue, no una sugerencia.
 
 ## Redireccion a flechodiezx
 

@@ -1113,6 +1113,7 @@ class ModoRamaDelUsuarioHotfixTests(unittest.TestCase):
         self._exige(parrafo, (
             "git -C <ruta> rev-list --count <base>..<rama>",
             "mas de 0 sigue", "`0` se detiene", 'comando que falla es "no se" y se detiene',
+            "El lint y los tests de abajo corren con `<ruta>` como directorio de trabajo",
         ), "Fase 2, producto")
         for prohibido in ("git worktree remove", "git merge <rama_worktree>"):
             self.assertNotIn(prohibido, parrafo, f"Fase 2: en el modo no hay `{prohibido}`")
@@ -1160,6 +1161,11 @@ class ModoRamaDelUsuarioHotfixTests(unittest.TestCase):
         seccion = self.SECCION(self._hotfix(), self.FASE_2)
         fuera = "\n\n".join(p for p in self.PARRAFO(seccion) if not p.lstrip().startswith(self.MARCADOR))
         self._exige(fuera, ("isolation: worktree", "fix/N-<slug>"), "Fase 2 (camino normal, fuera de los parrafos del modo)")
+
+    def test_regla_dura_4_nombra_la_salvedad_del_modo(self):
+        reglas = self.SECCION(self._hotfix(), "## Reglas duras")
+        self.assertIn("4. **Siempre** worktree aislado, salvo en el modo rama del usuario (Fase 2)", reglas,
+                      "la regla dura 4 no puede contradecir el modo rama del usuario (review #268, WARNING 2)")
 
 
 class DodEstrictoTests(unittest.TestCase):
