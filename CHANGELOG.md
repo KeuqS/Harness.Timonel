@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.0 — en desarrollo
+
+- `skills/code-review` §3.5 lee la línea de `mutar_literal.py` con la misma regla que `implement-plugin-change`: con `base: B de M` y B > 0 la evidencia es `N > B` (`N <= B` es un test vacuo, WARNING) y sin línea base sigue valiendo `N=0`; antes el reviewer aceptaba `fallos: 1 de 409` con `base: 1 de 409`. Tests nuevos: `VacuoConLineaBaseTests` (3, acotado a §3.5 y con la regla literal en ambos skills); 446 en verde (#288)
+
 ## 0.15.0 — 2026-10-13
 
 - `scripts/mutar_literal.py` corre unittest en la copia con `<copia>/tests` delante del `PYTHONPATH` del llamador (que se conserva), de modo que `--test tests.test_sensores.*` ya no sale `no sé: objetivo de test no encontrado` por los imports de módulos hermanos; el docstring avisa que borrar una llamada completa con paréntesis deja un error de sintaxis (`no sé`) y que hay que mutar el argumento o la condición. Tests nuevos: `PythonpathDeLaCopiaTests` (3) y `DocstringAvisaBorrarLlamadaTests` (1); 422 en verde (#286)
