@@ -604,7 +604,7 @@ def _todos_los_comandos() -> list[str]:
 
 
 def _correr_con_payload(
-    comando_hook: str, payload: dict, cwd: Path, plugin_root: str, path_previo: str = ""
+    comando_hook: str, payload: dict, cwd: Path, plugin_root: str, path_previo: str = "", env_extra: dict | None = None
 ) -> subprocess.CompletedProcess:
     """Como `_correr_hook` pero con payload libre (los hooks de PostToolUse `Edit|Write` reciben
     `file_path`, no `command`) y un directorio opcional al frente del PATH (para mockear `gh`)."""
@@ -612,6 +612,7 @@ def _correr_con_payload(
     env["CLAUDE_PLUGIN_ROOT"] = plugin_root
     if path_previo:
         env["PATH"] = path_previo + os.pathsep + env["PATH"]
+    env.update(env_extra or {})
     return subprocess.run(
         ["bash", "-c", comando_hook], input=json.dumps(payload), capture_output=True, text=True, cwd=cwd, env=env
     )
@@ -1066,6 +1067,23 @@ class CompuertasResuelvenConfigDesdeWorktreeTests(_ReposDeJuguete, unittest.Test
         self.assertIn(AVISO_RAIZ, raiz.stdout)
         self.assertIn(f"({MODULE_FILE})", raiz.stdout)
         self.assertEqual(otro.stdout, "")
+
+    def test_escenario_2_aviso_de_archivo_raiz_con_cwd_por_symlink(self):
+        """El `file_path` llega con el PWD logico (bajo un symlink) mientras `git rev-parse
+        --show-toplevel` devuelve la ruta fisica: el aviso debe seguir saliendo."""
+        comando = _comando_aviso_raiz()
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            repo = base / "repo"
+            repo.mkdir()
+            _preparar_repo(repo, "main", perfil="consumidor", config_extra={"api": {"moduleFile": MODULE_FILE}})
+            enlace = base / "enlace"
+            enlace.symlink_to(repo)
+            payload = {"tool_input": {"file_path": f"{enlace}/{MODULE_FILE}"}}
+            resultado = _correr_con_payload(comando, payload, enlace, str(ROOT), env_extra={"PWD": str(enlace)})
+        self.assertEqual(resultado.returncode, 0, resultado.stderr)
+        self.assertIn(AVISO_RAIZ, resultado.stdout)
+        self.assertIn(f"({MODULE_FILE})", resultado.stdout)
 
     def test_escenario_3_onboard_no_dice_que_falta_el_config_en_el_worktree(self):
         with tempfile.TemporaryDirectory() as tmp:
