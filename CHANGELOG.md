@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.16.0 — en desarrollo
+## 0.16.0 — 2026-10-13
 
 - La regla "el padre del common-dir solo vale si se llama `.git`" vive en dos lugares, la compuerta del guard en `hooks/hooks.json` y `scripts/timonel_gh.py::resolver_config_path`, y ahora una sola prueba los ata: `ParidadCompuertaResolverTests` (`tests/test_hooks_integracion.py`) compara ambas decisiones sobre 7 repos de juguete (principal, worktree, subdirectorio de consumidor, no consumidor, worktree con principal sin config, bare desde subdirectorio, submódulo); la regla también rige en subdirectorios de un consumidor, efecto que la entrada 0.13.0 no nombraba; la heurística `sensor-importa-no-reimplementa` dice ahora que la copia inevitable se ata con un test de paridad (absorbe #285); 446 en verde (#283, #285)
 - `skills/code-review` §3.5 lee la línea de `mutar_literal.py` con la misma regla que `implement-plugin-change`: con `base: B de M` y B > 0 la evidencia es `N > B` (`N <= B` es un test vacuo, WARNING) y sin línea base sigue valiendo `N=0`; antes el reviewer aceptaba `fallos: 1 de 409` con `base: 1 de 409`. Tests nuevos: `VacuoConLineaBaseTests` (3, acotado a §3.5 y con la regla literal en ambos skills); 446 en verde (#288)
