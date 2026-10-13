@@ -29,15 +29,19 @@ Modos (la unidad es la linea; se mutan TODAS las que contienen el literal):
 
 Sin `--test` corre `unittest discover -s tests` en la copia.
 
-Stdout: `lineas mutadas: K` y `fallos: N de M`.
+Stdout: `lineas mutadas: K`, `fallos: N de M` y `base: B de M`, en ese orden y
+cada una en su linea. `base` es la misma corrida sobre la copia SIN mutar,
+medida antes de escribir la mutacion: si la suite ya falla en la copia, `N` solo
+es evidencia cuando `N > B`. La linea `fallos:` no cambia de forma.
 
 Codigos de salida:
-    0   hubo conteo `fallos: N de M` (con la mutacion verificada)
+    0   hubo conteo `fallos: N de M` (con la mutacion verificada) y `base: B de M`
     2   no se (stderr: `no sé: <motivo>`, uno de `MOTIVOS`): mutacion que no
         entro, `--a` que no es un encabezado `#+ `, seccion destino
         inexistente, copia o lectura imposible (OSError, shutil.Error, archivo
         no UTF-8), objetivo sin tests o inexistente, salida no parseable,
-        timeout, o argumentos invalidos (coincide con el exit de uso de
+        timeout, una corrida base cuyo `Ran M tests` no coincide con el de la
+        mutada (`base_inconsistente`), o argumentos invalidos (coincide con el exit de uso de
         argparse). No hay exit 1: ningun "no pude medir" termina en traceback.
 """
 
@@ -66,6 +70,7 @@ MOTIVOS = {
     "objetivo_no_encontrado": "objetivo de test no encontrado",
     "sin_tests": "el objetivo no recolectó ningún test",
     "salida_no_parseable": "la salida de unittest no trae `Ran M tests`",
+    "base_inconsistente": "la corrida sin mutar y la mutada no ejecutaron el mismo número de tests",
     "copia_o_lectura_imposible": "no se pudo copiar el repo o leer/escribir la ruta (symlink roto, permisos o archivo no UTF-8)",
     "timeout": f"unittest superó el timeout de {TIMEOUT_S} s",
 }
@@ -196,8 +201,8 @@ def _validar(args: argparse.Namespace) -> None:
         raise NoSe("destino_no_es_encabezado")
 
 
-def medir(args: argparse.Namespace) -> tuple[int, int, int]:
-    """(lineas_mutadas, fallos, tests). Lanza NoSe."""
+def medir(args: argparse.Namespace) -> tuple[int, int, int, int]:
+    """(lineas_mutadas, fallos, tests, fallos_base). Lanza NoSe."""
     _validar(args)
     origen = Path.cwd().resolve()
     with tempfile.TemporaryDirectory() as tmp:
@@ -209,13 +214,16 @@ def medir(args: argparse.Namespace) -> tuple[int, int, int]:
         except (OSError, UnicodeDecodeError):
             raise NoSe("copia_o_lectura_imposible")
         nuevo, k = mutar(original, args.literal, args.modo, args.a)
+        base, total_base = parsear_unittest(correr_unittest(copia, args.test), args.test is not None)
         try:
             archivo.write_text(nuevo, encoding="utf-8")
         except OSError:
             raise NoSe("copia_o_lectura_imposible")
         salida = correr_unittest(copia, args.test)
         fallos, total = parsear_unittest(salida, args.test is not None)
-    return k, fallos, total
+    if total_base != total:
+        raise NoSe("base_inconsistente")
+    return k, fallos, total, base
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -227,12 +235,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--test")
     args = parser.parse_args(argv)
     try:
-        k, fallos, total = medir(args)
+        k, fallos, total, base = medir(args)
     except NoSe as e:
         print(f"no sé: {e}", file=sys.stderr)
         return 2
     print(f"lineas mutadas: {k}")
     print(f"fallos: {fallos} de {total}")
+    print(f"base: {base} de {total}")
     return 0
 
 

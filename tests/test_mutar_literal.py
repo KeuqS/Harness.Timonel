@@ -1,4 +1,6 @@
 import argparse
+import contextlib
+import io
 import re
 import shutil
 import subprocess
@@ -326,6 +328,81 @@ class MainEnProcesoTests(unittest.TestCase):
     def test_timeout_sale_2(self):
         with mock.patch.object(ml.subprocess, "run", side_effect=subprocess.TimeoutExpired("x", 1)):
             self.assertEqual(ml.main(self._args(self.repo)), 2)
+
+    def _salida(self, fallos: int, total: int) -> str:
+        return f"Ran {total} tests in 0.1s\n\nFAILED (failures={fallos})\n" if fallos else f"Ran {total} tests in 0.1s\n\nOK\n"
+
+    def _no_se(self, efectos, motivo: str):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(ml, "correr_unittest", side_effect=efectos), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            codigo = ml.main(self._args(self.repo))
+        self.assertEqual(codigo, 2)
+        self.assertIn(ml.MOTIVOS[motivo], err.getvalue())
+        self.assertEqual(out.getvalue(), "")
+
+    def test_base_sin_ran_sale_2_salida_no_parseable(self):
+        self._no_se(["basura", self._salida(1, 2)], "salida_no_parseable")
+
+    def test_base_con_timeout_sale_2_timeout(self):
+        self._no_se([ml.NoSe("timeout")], "timeout")
+
+    def test_base_con_total_distinto_sale_2_base_inconsistente(self):
+        self._no_se([self._salida(0, 3), self._salida(1, 2)], "base_inconsistente")
+
+    def test_todo_valido_sale_0_con_las_tres_lineas(self):
+        out = io.StringIO()
+        with mock.patch.object(ml, "correr_unittest", side_effect=[self._salida(1, 2), self._salida(2, 2)]), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(ml.main(self._args(self.repo)), 0)
+        self.assertEqual(out.getvalue().splitlines(), ["lineas mutadas: 1", "fallos: 2 de 2", "base: 1 de 2"])
+
+    def test_la_base_es_la_primera_corrida_y_ve_el_archivo_sin_mutar(self):
+        vistos = []
+
+        def espia(copia, objetivo):
+            vistos.append("MARCA" in (copia / "doc.md").read_text(encoding="utf-8"))
+            return self._salida(0, 2)
+
+        with mock.patch.object(ml, "correr_unittest", side_effect=espia), contextlib.redirect_stdout(io.StringIO()):
+            ml.main(self._args(self.repo))
+        self.assertEqual(vistos, [True, False])
+
+
+class LineaBaseTests(unittest.TestCase):
+    """#273: la corrida sin mutar se reporta en `base: B de M`, linea propia tras `fallos:`.
+    Repo de juguete propio: un test falla sin mutar (siempre) y otro ve la mutacion."""
+
+    TEST_BASE = '''import unittest
+from pathlib import Path
+
+DOC = (Path(__file__).resolve().parents[1] / "doc.md").read_text(encoding="utf-8")
+
+
+class TestBase(unittest.TestCase):
+    def test_roto_de_antes(self):
+        self.fail("falla sin mutar")
+
+    def test_ve_la_marca(self):
+        self.assertIn("MARCA", DOC)
+'''
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name) / "repo"
+        (self.repo / "tests").mkdir(parents=True)
+        (self.repo / "doc.md").write_text(DOC, encoding="utf-8")
+        (self.repo / "tests" / "test_base.py").write_text(self.TEST_BASE, encoding="utf-8")
+
+    def test_stdout_trae_mutadas_fallos_y_base_en_orden(self):
+        r = _correr(self.repo, "--ruta", "doc.md", "--literal", "MARCA", "--modo", "borrar")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), ["lineas mutadas: 1", "fallos: 2 de 2", "base: 1 de 2"])
+
+    def test_la_linea_de_fallos_conserva_su_forma(self):
+        r = _correr(self.repo, "--ruta", "doc.md", "--literal", "MARCA", "--modo", "borrar")
+        self.assertRegex(r.stdout, re.compile(r"^fallos: (\d+) de (\d+)$", re.MULTILINE))
 
 
 class EscenarioRealContraElRepoTests(unittest.TestCase):
