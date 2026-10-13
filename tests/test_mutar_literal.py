@@ -463,6 +463,7 @@ class DocstringAvisaBorrarLlamadaTests(unittest.TestCase):
         self.assertIn("mutar el argumento", doc)
 
 
+@unittest.skipUnless((ROOT / ".git").exists(), "requiere un checkout Git real")
 class EscenarioRealContraElRepoTests(unittest.TestCase):
     """Escenario 1 de #263 contra la copia del repo real (no un repo de juguete).
 
