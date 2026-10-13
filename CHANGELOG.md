@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.0 — en desarrollo
+
+- `scripts/verificar_plugin.py` corre la verificación del plugin (unittest, `bash -n` por subprocess sobre `scripts/*.sh` y `.githooks/*`, `jq` sobre los tres JSON) y responde con una sola línea final `PASSED` (0), `FAILED: <pasos>` (1) o `no sé: <motivo>` (2), nunca PASSED con un paso sin evidencia; lo citan `implement-plugin-change` (paso 4 y línea `Verificación:` del Output: un exit 2 es pendiente obligatorio de la consolidación), la Fase B del perfil plugin de `consolidate-story` y `CLAUDE.md`. Tests: `tests/test_verificar_plugin.py` (20) y `VerificarPluginCitadoTests`; 439 en verde (#270, #293)
+
 ## 0.14.0 — 2026-10-13
 
 - `agents/flechodiezx-hotfix.md` acepta el modo "rama del usuario": con una rama y un worktree propios pedidos por el usuario, pasa `directorio_trabajo: <ruta>` al review (Fase 3) y a la Fase 6, y el camino normal (`isolation: worktree`, rama `fix/<N>-<slug>`) queda intacto. Tests: `ModoRamaDelUsuarioHotfixTests` con 9 casos en `tests/test_consistencia.py`; 411 en verde (#268)
