@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.0 — en desarrollo
+
+- La regla "el padre del common-dir solo vale si se llama `.git`" vive en dos lugares, la compuerta del guard en `hooks/hooks.json` y `scripts/timonel_gh.py::resolver_config_path`, y ahora una sola prueba los ata: `ParidadCompuertaResolverTests` (`tests/test_hooks_integracion.py`) compara ambas decisiones sobre 7 repos de juguete (principal, worktree, subdirectorio de consumidor, no consumidor, worktree con principal sin config, bare desde subdirectorio, submódulo); la regla también rige en subdirectorios de un consumidor, efecto que la entrada 0.13.0 no nombraba; la heurística `sensor-importa-no-reimplementa` dice ahora que la copia inevitable se ata con un test de paridad (absorbe #285); 446 en verde (#283, #285)
+
 ## 0.15.0 — 2026-10-13
 
 - `scripts/mutar_literal.py` corre unittest en la copia con `<copia>/tests` delante del `PYTHONPATH` del llamador (que se conserva), de modo que `--test tests.test_sensores.*` ya no sale `no sé: objetivo de test no encontrado` por los imports de módulos hermanos; el docstring avisa que borrar una llamada completa con paréntesis deja un error de sintaxis (`no sé`) y que hay que mutar el argumento o la condición. Tests nuevos: `PythonpathDeLaCopiaTests` (3) y `DocstringAvisaBorrarLlamadaTests` (1); 422 en verde (#286)
